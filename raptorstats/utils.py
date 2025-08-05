@@ -87,3 +87,4 @@ def split_window_into_quadrants(window: rio.windows.Window):
     wbr = Window(window.col_off + half_width, window.row_off + half_height, window.width - half_width, window.height - half_height)
 
     return wtl, wtr, wbl, wbr
+
