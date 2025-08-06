@@ -3,7 +3,8 @@ import geopandas as gpd
 import rasterio as rio
 from rasterio.features import geometry_window
 import line_profiler
-
+from raptorstats.stats import Stats
+    
 
 class ZonalStatMethod():
 
@@ -37,12 +38,11 @@ class ZonalStatMethod():
         stats_out = {}
 
         if data.size == 0:
-            for stat in self.stats:
-                if stat == "count":
-                    stats_out[stat] = 0
-                else:
-                    stats_out[stat] = None
+            stats_out = { stat: None for stat in stats }
+            if "count" in stats:
+                stats_out["count"] = 0
             return stats_out
+        
 
         # We are prly only use the mean but just in case
         if "min" in stats:
@@ -55,6 +55,17 @@ class ZonalStatMethod():
             stats_out["count"] = int(len(data))
         if "sum" in stats:
             stats_out["sum"] = float(data.sum())
+        if "std" in stats:
+            stats_out["std"] = float(data.std())
+        if "median" in stats:
+            stats_out["median"] = float(np.median(data))
+
+        # Categorical:
+        # majority
+        # minority
+        # value: count
+        # unique: len(unique values)
+        # 
 
         return stats_out
 
@@ -146,7 +157,6 @@ class ZonalStatMethod():
             feature = gpd.GeoDataFrame(geometry=[geom], crs=vector_layer.crs)
             results.append(self._compute_stats(feature, raster, window))
         return results
-        
 
     def __call__(self, raster_file_path: str, vector_file_path: str, stats: list):
         """User-facing method to compute the zonal statistics.

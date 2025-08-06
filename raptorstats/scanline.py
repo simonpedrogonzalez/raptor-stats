@@ -19,7 +19,8 @@ class Scanline(ZonalStatMethod):
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         transform = raster.transform
-        # ASSUMES NORTH UP NO SHEAR AFFINE!!
+        # ASSUMES NORTH UP NO SHEAR AFFINE
+        # ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
 
         def rows_to_ys(rows):
             return (transform * (0, rows + 0.5))[1]
