@@ -121,6 +121,7 @@ class Scanline(ZonalStatMethod):
                 width=max_col - min_col,
                 height=1
             )
+            
             # Does not handle nodata
             data = raster.read(1, window=reading_window, masked=False)[0]
             for j, col0, col1, f_index in reading_line:
@@ -168,12 +169,12 @@ class Scanline(ZonalStatMethod):
         # ax.set_title('Difference Mask')
         # plt.show()
         # print('stop')
-        global_mask = global_mask[1:, :]  # remove the last row added for debugging
+        global_mask = global_mask[:-1, :]  # remove the last row added for debugging
         ref_mask = ref_mask_rasterstats(features, raster, window)
         compare_stats(self.results,
             self.raster_file_path.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
         
-        plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window)
+        plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=inter_ys)
         print('done')
         # end of debugging code    
         

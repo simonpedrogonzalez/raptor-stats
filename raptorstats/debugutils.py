@@ -16,6 +16,7 @@ def plot_mask_comparison(
         window:      tuple = None,
         title:       str = "Mask comparison",
         show_grid:   bool = True,
+        scanlines:   np.ndarray = None,
 ):
     """
     Visualise agreement / disagreement between two binary-or-indexed masks.
@@ -66,12 +67,15 @@ def plot_mask_comparison(
         for c in col_edges:
             x, _ = subset_transform * (c, 0)
             ax.axvline(x, color="black", linewidth=0.2, alpha=0.3)
-    # -----------------------------------------------------------------------
+    # ---------------------- grid lines -------------------------------------
 
     # ---- 3. overlay geometries -------------------------------------------
     features.plot(ax=ax, facecolor="none", edgecolor="black", linewidth=1)
     # -----------------------------------------------------------------------
 
+    if scanlines is not None:
+        for y in scanlines:
+            ax.axhline(y, color="black", linewidth=0.5, linestyle="--")
     # legend
     from matplotlib.patches import Patch
     legend_patches = [
@@ -91,41 +95,6 @@ import geopandas as gpd
 import rasterio as rio
 from raptorstats.raster_methods import Masking
 
-def create_ref_mask(features: gpd.GeoDataFrame, raster: rio.DatasetReader, window: rio.windows.Window = None) -> np.ndarray:
-    """
-    Generate a reference mask using the Masking method on all features.
-
-    Parameters
-    ----------
-    features : geopandas.GeoDataFrame
-        Geometries to mask.
-    raster : rasterio.DatasetReader
-        Raster object to use for masking.
-    window : rasterio.windows.Window, optional
-        Optional window over which to compute the mask. If None, it uses the bounding box of all features.
-
-    Returns
-    -------
-    np.ndarray
-        A 2D integer array where each pixel is assigned the feature index + 1 it belongs to, or 0 if no feature covers it.
-    """
-    if window is None:
-        window = rio.windows.from_bounds(*features.total_bounds, transform=raster.transform)
-
-    out_shape = (int(np.ceil(window.height)), int(np.ceil(window.width)))
-    ref_mask = np.zeros(out_shape, dtype=int)
-
-    masker = Masking()
-    for idx, geom in enumerate(features.geometry):
-        if geom is None or geom.is_empty:
-            continue
-        mask = masker.mask(geom, raster, window)
-        # Assign feature index + 1 where mask is True
-        ref_mask[mask] = idx + 1
-
-    return ref_mask
-
-
 import pprint
 from textwrap import indent
 
@@ -134,8 +103,6 @@ import rasterio as rio
 from rasterstats import zonal_stats
 
 from raptorstats.raster_methods   import Masking          # <- class you showed
-from raptorstats.raster_methods   import RasterStatsMasking  # wrapper around rasterstats
-
 
 def compare_stats(
         mystats, # scanline stats
@@ -200,11 +167,40 @@ def compare_stats(
 
 import numpy as np
 import rasterio as rio
-from rasterio.features import rasterize
-from shapely.geometry import mapping
-
 from rasterio.windows import transform as window_transform
-from rasterstats.utils import rasterize_geom   # same helper rasterstats uses
+from rasterstats.utils import rasterize_geom
+
+def compute_stats(masked: np.ndarray):
+    """Computes the statistics for the masked array.
+
+    The code is based on the rasterstats library, so no difference in performance
+    should be expected in this part.
+    """
+
+    stats = {'min', 'max', 'mean', 'count', 'sum'}
+    stats_out = {}
+
+    if masked.compressed().size == 0:
+        for stat in self.stats:
+            if stat == "count":
+                stats_out[stat] = 0
+            else:
+                stats_out[stat] = None
+        return stats_out
+
+    # We are prly only use the mean but just in case
+    if "min" in stats:
+        stats_out["min"] = float(masked.min())
+    if "max" in stats:
+        stats_out["max"] = float(masked.max())
+    if "mean" in stats:
+        stats_out["mean"] = float(masked.mean())
+    if "count" in stats:
+        stats_out["count"] = int(masked.count())
+    if "sum" in stats:
+        stats_out["sum"] = float(masked.sum())
+
+    return stats_out
 
 
 def ref_mask_rasterstats(
@@ -231,8 +227,6 @@ def ref_mask_rasterstats(
         for idx, geom in enumerate(features.geometry):
             if geom is None or geom.is_empty:
                 continue
-            geom_bounds = geom.bounds
-            fsrc = rast.read(bounds=geom_bounds, boundless=False)
             # geom as shapely object
             # geom = mapping(geom)
             
@@ -249,5 +243,17 @@ def ref_mask_rasterstats(
 
             # burn feature id (idx+1) where mask is True
             ref_mask[geom_mask] = idx + 1
+
+
+            fsrc = raster.read(window=win)
+            has_nan = np.issubdtype(fsrc.dtype, np.floating) and np.isnan(
+                fsrc.min()
+            )
+            isnodata = fsrc == raster.nodata
+            if has_nan:
+                isnodata = isnodata | np.isnan(fsrc)
+            masked = np.ma.MaskedArray(fsrc, mask=(isnodata | ~geom_mask))
+            stats = compute_stats(masked)
+            print(f"Feature #{idx+1} stats: {stats['mean']}")
 
     return ref_mask
