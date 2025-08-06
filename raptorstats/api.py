@@ -46,6 +46,8 @@ def zonal_stats(
         gdf = vectors
     else:
         gdf = gpd.read_file(vectors, layer=layer)
+        file_path = vectors
+        gdf.attrs["file_path"] = file_path  # store original file path in GeoDataFrame attrs
 
     # ---- 3. open raster once ----
     if isinstance(raster, rio.io.DatasetReaderBase):

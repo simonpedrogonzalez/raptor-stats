@@ -1,8 +1,11 @@
 from raptorstats.zone_stat_method import ZonalStatMethod
+from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
 import rasterio as rio
 import geopandas as gpd
 import numpy as np
 from shapely import MultiLineString
+import matplotlib.pyplot as plt
+from rasterio.windows import transform as window_transform   # handy helper
 # import line_profiler
 
 
@@ -34,15 +37,25 @@ class Scanline(ZonalStatMethod):
             return np.floor(rows).astype(int), np.floor(cols).astype(int)
 
         # get window for the entire features, that is, the bounding box for all features
-        window = rio.windows.from_bounds(
-            *features.total_bounds,
-            transform=transform
+        # window = rio.windows.from_bounds(
+        #     *features.total_bounds,
+        #     transform=transform,
+
+        # )
+        # # snap to pixel grid
+        # window = window.round_offsets(op='floor').round_lengths(op='ceil')
+
+        window = rio.features.geometry_window(
+            raster,
+            features.geometry,
+            # transform=transform,
+            pad_x=0.5, pad_y=0.5,
         )
 
         # Debugging code
-        # w_height = int(np.ceil(window.height))
-        # w_width = int(np.ceil(window.width))
-        # global_mask = np.zeros((w_height+1, w_width), dtype=int)
+        w_height = int(np.ceil(window.height))
+        w_width = int(np.ceil(window.width))
+        global_mask = np.zeros((w_height+1, w_width), dtype=int)
         # End Debugging code
 
         row_start, row_end = int(np.floor(window.row_off)), int(np.ceil(window.row_off + window.height))
@@ -117,10 +130,10 @@ class Scanline(ZonalStatMethod):
                 
                 # Debugging code
                 # mark the pixels in the global mask
-                # row_in_mask = row - row_start
-                # col0_in_mask = col0 - col_start
-                # col1_in_mask = col1 - col_start
-                # global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+                row_in_mask = row - row_start
+                col0_in_mask = col0 - col_start
+                col1_in_mask = col1 - col_start
+                global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
                 # End Debugging code
 
                 if len(pixel_values) > 0:
@@ -138,7 +151,7 @@ class Scanline(ZonalStatMethod):
         self.results = results_per_feature
 
         # Debugging code
-        # from raster_methods import Masking
+        # from raptorstats.raster_methods import Masking
         # m = Masking()
         # ref_mask = np.zeros_like(global_mask, dtype=int)
         # for i in range(len(features.geometry)):
@@ -153,11 +166,21 @@ class Scanline(ZonalStatMethod):
         # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
         # ax.imshow(diff_mask, cmap='inferno')
         # ax.set_title('Difference Mask')
-        # plt.savefig('diff_mask.png')
-        # plt.close()
+        # plt.show()
+        # print('stop')
+        global_mask = global_mask[1:, :]  # remove the last row added for debugging
+        ref_mask = ref_mask_rasterstats(features, raster, window)
+        compare_stats(self.results,
+            self.raster_file_path.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
+        
+        plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window)
+        print('done')
         # end of debugging code    
         
     
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         self._precomputations(features, raster)
         return self.results
+
+
+
