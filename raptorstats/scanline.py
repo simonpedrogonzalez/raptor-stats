@@ -19,6 +19,7 @@ class Scanline(ZonalStatMethod):
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         transform = raster.transform
+        # ASSUMES NORTH UP NO SHEAR AFFINE!!
 
         def rows_to_ys(rows):
             return (transform * (0, rows + 0.5))[1]
@@ -31,11 +32,31 @@ class Scanline(ZonalStatMethod):
         # def ys_to_rows(ys):
         #     return ((~transform) * (np.zeros_like(ys), ys))[1].astype(int)
         
-        def xy_to_rowcol(xs, ys):
-            # pixel in which the point is located
+        def xy_to_rowcol(xs, ys, left=True):
             cols, rows = (~transform) * (xs, ys)
-            return np.floor(rows).astype(int), np.floor(cols).astype(int)
+            # if left:
+            #     # cols = np.ceil((xs - c) / a - 0.5).astype(int)
+            #     np.round(cols)
+            # else:
+            #     cols = np.floor((xs - c) / a - 0.5).astype(int)
+            return np.floor(rows).astype(int), np.round(cols).astype(int)
 
+        # def xy_to_rowcol(xs, ys):
+        #     # pixel in which the point is located
+        #     cols, rows = (~transform) * (xs, ys)
+        #     return np.floor(rows).astype(int), np.floor(cols).astype(int)
+
+        c = transform.c
+        a = transform.a
+
+        def x_to_col_start(xs):
+            """First col whose centre is at or right of xs."""
+            return np.ceil((xs - c) / a - 0.5).astype(int)
+
+        def x_to_col_end(xs):
+            """Last col whose centre is left of xs (inclusive)."""
+            return np.floor((xs - c) / a - 0.5).astype(int)
+        
         # get window for the entire features, that is, the bounding box for all features
         # window = rio.windows.from_bounds(
         #     *features.total_bounds,
@@ -96,11 +117,21 @@ class Scanline(ZonalStatMethod):
         inter_ys = intersection_table[:, 1]
         f_index = intersection_table[:, 0]
 
-        rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
-        _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
+        rows, col0s = xy_to_rowcol(inter_x0s, inter_ys, left=True)
+        _, col1s = xy_to_rowcol(inter_x1s, inter_ys, left=False)
+        # f = transform.f
+        # py = -transform.e # assumes north is up
+        # rows = np.ceil((f - inter_ys) / py - 0.5).astype(int)
+        # col0s = np.ceil((inter_x0s - c) / a - 0.5).astype(int)
+        # col1s = np.floor((inter_x1s - c) / a - 0.5).astype(int)
+        # col0s = x_to_col_start(inter_x0s)
+        # col1s = x_to_col_end(inter_x1s)
+
         reading_table = np.stack([
             rows, col0s, col1s, f_index
         ], axis=1).astype(int)
+
+        reading_table = reading_table[col0s < col1s] # removes pixel reads where both intersections fall in between pixel centers
 
         # sort by row
         reading_table = reading_table[np.argsort(reading_table[:, 0])]
@@ -125,6 +156,7 @@ class Scanline(ZonalStatMethod):
             # Does not handle nodata
             data = raster.read(1, window=reading_window, masked=False)[0]
             for j, col0, col1, f_index in reading_line:
+
                 c0 = col0 - min_col
                 c1 = col1 - min_col
                 pixel_values = data[c0:c1]
@@ -152,30 +184,13 @@ class Scanline(ZonalStatMethod):
         self.results = results_per_feature
 
         # Debugging code
-        # from raptorstats.raster_methods import Masking
-        # m = Masking()
-        # ref_mask = np.zeros_like(global_mask, dtype=int)
-        # for i in range(len(features.geometry)):
-        #     # get all results for this feature
-        #     feature = features.geometry[i]
-        #     fmask = m.mask(feature, raster, window)
-        #     # add a 0 row at the end of fmask
-        #     fmask = np.insert(fmask, 0, 0, axis=0)
-        #     ref_mask[fmask] = i+1
-        # import matplotlib.pyplot as plt
-        # diff_mask = global_mask - ref_mask
-        # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-        # ax.imshow(diff_mask, cmap='inferno')
-        # ax.set_title('Difference Mask')
-        # plt.show()
-        # print('stop')
-        global_mask = global_mask[:-1, :]  # remove the last row added for debugging
-        ref_mask = ref_mask_rasterstats(features, raster, window)
-        compare_stats(self.results,
-            self.raster_file_path.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
+        # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
+        # ref_mask = ref_mask_rasterstats(features, raster, window)
+        # compare_stats(self.results,
+        #     self.raster_file_path.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
         
-        plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=inter_ys)
-        print('done')
+        # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=inter_ys)
+        # print('done')
         # end of debugging code    
         
     
