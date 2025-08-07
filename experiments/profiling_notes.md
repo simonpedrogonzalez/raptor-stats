@@ -36,7 +36,7 @@ Inconsistent results, probably mostly the same
 
 ### Excessive np.ma.concatenate calls ?
 
-FIX THIS
+Idk if there's a better way to do this because I still need to build an np.ma.array from a list of arrays.
 
 ```
    223       245     357354.8   1458.6      5.0                  feature_data = np.ma.concatenate(pixel_values_per_feature[i])
@@ -45,9 +45,34 @@ FIX THIS
 ### Combining partials instead of accumulating
 
 Combining partials
+```
 Total time: 46.3969 s
-
 219     79702   28198373.0    353.8     60.8                      partials_per_feature[f_index].append(self.stats.from_array(pixel_values))
 231       343    4459274.9  13000.8      9.6              r = self.stats.from_partials(partials_per_feature[i])
+```
 
 Accumulating
+
+```
+Total time: 17.145 s
+```
+
+Conclusion: do not use partials, obviously.
+
+### numpy split instead of manually slicing for each reading_line
+
+When reading the data from the raster, instead of slicing the row of pixels manually, use `np.split`. Bad:
+```python
+ for i, row in enumerate(rows):
+   # read the line ....
+   for j, col0, col1, f_index in reading_line: # reading_line contains the indices and which feature it belongs to
+         c0 = col0 - min_col
+         c1 = col1 - min_col
+         pixel_values = data[c0:c1]
+         if len(pixel_values) > 0:
+            pixel_values_per_feature[f_index].append(pixel_values)
+```
+Good:
+```python
+
+```
