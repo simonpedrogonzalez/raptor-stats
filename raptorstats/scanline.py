@@ -114,34 +114,35 @@ class Scanline(ZonalStatMethod):
                 raise TypeError(f"Unexpected intersection type: {type(inter)}")
 
             # g_arr = np.asarray(geoms, dtype=object)
-            # starts = shapely.get_point(g_arr, 0)
-            # ends = shapely.get_point(g_arr, -1)
-            # x0s = shapely.get_x(starts)
-            # x1s = shapely.get_x(ends)
-            # ys = shapely.get_y(starts)
+            g_arr = shapely.get_parts(geoms)
+            starts = shapely.get_point(g_arr, 0)
+            ends = shapely.get_point(g_arr, -1)
+            x0s = shapely.get_x(starts)
+            x1s = shapely.get_x(ends)
+            ys = shapely.get_y(starts)
 
             # vertically stack the intersections
             # creating a numpy array of shape (n, 4)
             # with f_index, y, x0, x1
-            # intersection_table.extend(zip(
-            #     np.full_like(ys, f_index, dtype=int),
-            #     ys,
-            #     x0s,
-            #     x1s
-            # ))
+            intersection_table.extend(zip(
+                np.full_like(ys, f_index, dtype=int),
+                ys,
+                x0s,
+                x1s
+            ))
 
 
-            for ml in geoms:
-                # f_index, y, x0, x1, (space for row, col1,col2)
-                # coords = np.asarray(ml.coords)
-                x0, y_ = ml.coords[0]     # C-level direct index: one tuple, no loop
-                x1, _  = ml.coords[-1]
-                # y_ = coords[0][1]
-                # x0 = coords[0][0]
-                # x1 = coords[-1][0]
-                intersection_table.append((
-                    f_index, y_, x0, x1
-                ))
+            # for ml in geoms:
+            #     # f_index, y, x0, x1, (space for row, col1,col2)
+            #     # coords = np.asarray(ml.coords)
+            #     x0, y_ = ml.coords[0]     # C-level direct index: one tuple, no loop
+            #     x1, _  = ml.coords[-1]
+            #     # y_ = coords[0][1]
+            #     # x0 = coords[0][0]
+            #     # x1 = coords[-1][0]
+            #     intersection_table.append((
+            #         f_index, y_, x0, x1
+            #     ))
 
         if not intersection_table:
             self.results = [self.stats.from_array(np.ma.array([], mask=True)) for _ in features.geometry]

@@ -17,7 +17,7 @@ exp = Experiment(
     raster_path=raster_layer_file,
     vector_path=vector_layer_file,
     func=zonal_stats,
-    reps=1,
+    reps=5,
     stats=["count"],
     check_results=True,
 )
