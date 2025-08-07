@@ -1,9 +1,9 @@
 import geopandas as gpd
 import rasterio as rio
+from raptorstats.io import open_raster, open_vector
 
-# --- make sure your Scanline & helpers are importable ---
-from raptorstats.scanline import Scanline     # ← adjust import path
-from rasterstats.utils import check_stats      # re-use existing util for VALID_STATS, etc.
+from raptorstats.scanline import Scanline
+from raptorstats.stats import Stats
 
 
 def zonal_stats(
@@ -16,6 +16,7 @@ def zonal_stats(
         affine=None,
         geojson_out=False,
         prefix=None,
+        categorical=False,
         **kwargs,
 ):
     """
@@ -39,28 +40,19 @@ def zonal_stats(
     """
 
     # ---- 1. prepare stats list (reuse rasterstats helper) ----
-    stats, _ = check_stats(stats, categorical=False)   # Scanline = numeric only
+    stats_conf = Stats(stats, categorical=categorical)
 
     # ---- 2. read vectors (GeoPandas) ----
-    if isinstance(vectors, gpd.GeoDataFrame):
-        gdf = vectors
-    else:
-        gdf = gpd.read_file(vectors, layer=layer)
-        file_path = vectors
-        gdf.attrs["file_path"] = file_path  # store original file path in GeoDataFrame attrs
+    
 
     # ---- 3. open raster once ----
-    if isinstance(raster, rio.io.DatasetReaderBase):
-        ds = raster
-        must_close = False
-    else:
-        ds = rio.open(raster, "r")
-        must_close = True
+    with open_raster(raster, affine=affine, nodata=nodata, band=band) as ds:
 
-    try:
+        gdf = open_vector(vectors, layer=layer, affine=affine)
+
         # ---- 4. run Scanline ----
         sl = Scanline()
-        results = sl(ds, gdf, stats=stats)   # Scanline.__call__ returns list[dict]
+        results = sl(ds, gdf, stats=stats_conf)   # Scanline.__call__ returns list[dict]
 
         # ---- 5. attach / post-process ----
         if prefix:
@@ -69,19 +61,15 @@ def zonal_stats(
                 for res in results
             ]
 
-        if geojson_out:
-            features_out = []
-            for feat, res in zip(gdf.itertuples(index=False), results):
-                f = {
-                    "type": "Feature",
-                    "geometry": feat.geometry.__geo_interface__,
-                    "properties": res or {},
-                }
-                features_out.append(f)
-            return features_out
-        else:
-            return results
+        # if geojson_out:
+        #     features_out = []
+        #     for feat, res in zip(gdf.itertuples(index=False), results):
+        #         f = {
+        #             "type": "Feature",
+        #             "geometry": feat.geometry.__geo_interface__,
+        #             "properties": res or {},
+        #         }
+        #         features_out.append(f)
+        #     return features_out
+        return results
 
-    finally:
-        if must_close:
-            ds.close()

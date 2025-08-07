@@ -44,7 +44,7 @@ class Stats:
         if {"mean", "std", "median"} & required or percentiles:
             required.update({"count", "sum"})
         if "std" in required:
-            required.add("sum_sq")
+            required.update({"sum_sq"})
         if "range" in required:
             required.update({"min", "max"})
         if { "median" } & required or percentiles:
@@ -56,6 +56,9 @@ class Stats:
         for tok in (stats + VALID_STATS):
             if tok in required and tok not in ordered:
                 ordered.append(tok)
+                required.remove(tok)
+        for tok in required:
+            ordered.append(tok)
 
         self.stats = ordered
         self.categorical = categorical
@@ -113,11 +116,11 @@ class Stats:
             out["nan"] = int(nan_mask.sum())
 
         n = valid.size
-        
+        if "count" in self.stats:
+            out["count"] = int(n)
+
         if n:
             # Basic stats
-            if "count" in self.stats:
-                out["count"] = int(n)
             if "sum" in self.stats:
                 out["sum"] = float(valid.sum())
             if "min" in self.stats:
@@ -129,6 +132,7 @@ class Stats:
             if "range" in self.stats:
                 out["range"] = float(valid.max() - valid.min())
 
+            sum_sq = None
             if "sum_sq" in self.stats:
                 sum_sq = (valid ** 2).sum()
                 out["sum_sq"] = float(sum_sq)
@@ -141,7 +145,7 @@ class Stats:
 
             # Percentiles
             for tok in self.percentiles:
-                out["percentile_" + str(tok)] = float(np.percentile(valid, tok))
+                out["percentile_" + str(int(tok))] = float(np.percentile(valid, tok))
 
             # Histogram / Categorical stats
             if self.run_count:
@@ -158,6 +162,9 @@ class Stats:
 
                 if self.categorical:
                     out["histogram"] = counter
+        elif self.categorical:
+            # empty input, but categorical requested
+            out["histogram"] = {}
 
         return out
     
@@ -252,7 +259,7 @@ class Stats:
                 if "median" in self.stats:
                     out["median"] = _quantile(50.0)
                 for q in self.percentiles:
-                    out[f"percentile_{q}"] = _quantile(q)
+                    out[f"percentile_{int(q)}"] = _quantile(q)
 
             if self.run_count:
                 if "unique" in self.stats:

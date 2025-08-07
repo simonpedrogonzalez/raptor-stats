@@ -3,7 +3,7 @@ from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, c
 import rasterio as rio
 import geopandas as gpd
 import numpy as np
-from shapely import MultiLineString
+from shapely import MultiLineString, LineString
 import matplotlib.pyplot as plt
 from rasterio.windows import transform as window_transform   # handy helper
 # import line_profiler
@@ -19,16 +19,16 @@ class Scanline(ZonalStatMethod):
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         transform = raster.transform
-        # ASSUMES NORTH UP NO SHEAR AFFINE
+        # ASSUMES NORTH UP, NO SHEAR AFFINE
         # ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
 
         def rows_to_ys(rows):
             return (transform * (0, rows + 0.5))[1]
         
-        def rowcol_to_xy(rows, cols):
-            # coords of pixel centers
-            xs, ys = (transform * (cols + 0.5, rows + 0.5))
-            return xs, ys
+        # def rowcol_to_xy(rows, cols):
+        #     # coords of pixel centers
+        #     xs, ys = (transform * (cols + 0.5, rows + 0.5))
+        #     return xs, ys
 
         # def ys_to_rows(ys):
         #     return ((~transform) * (np.zeros_like(ys), ys))[1].astype(int)
@@ -40,23 +40,23 @@ class Scanline(ZonalStatMethod):
             #     np.round(cols)
             # else:
             #     cols = np.floor((xs - c) / a - 0.5).astype(int)
-            return np.floor(rows).astype(int), np.round(cols).astype(int)
+            return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(int).clip(min=0)
 
         # def xy_to_rowcol(xs, ys):
         #     # pixel in which the point is located
         #     cols, rows = (~transform) * (xs, ys)
         #     return np.floor(rows).astype(int), np.floor(cols).astype(int)
 
-        c = transform.c
-        a = transform.a
+        # c = transform.c
+        # a = transform.a
 
-        def x_to_col_start(xs):
-            """First col whose centre is at or right of xs."""
-            return np.ceil((xs - c) / a - 0.5).astype(int)
+        # def x_to_col_start(xs):
+        #     """First col whose centre is at or right of xs."""
+        #     return np.ceil((xs - c) / a - 0.5).astype(int)
 
-        def x_to_col_end(xs):
-            """Last col whose centre is left of xs (inclusive)."""
-            return np.floor((xs - c) / a - 0.5).astype(int)
+        # def x_to_col_end(xs):
+        #     """Last col whose centre is left of xs (inclusive)."""
+        #     return np.floor((xs - c) / a - 0.5).astype(int)
         
         # get window for the entire features, that is, the bounding box for all features
         # window = rio.windows.from_bounds(
@@ -75,9 +75,9 @@ class Scanline(ZonalStatMethod):
         )
 
         # Debugging code
-        w_height = int(np.ceil(window.height))
-        w_width = int(np.ceil(window.width))
-        global_mask = np.zeros((w_height+1, w_width), dtype=int)
+        # w_height = int(np.ceil(window.height))
+        # w_width = int(np.ceil(window.width))
+        # global_mask = np.zeros((w_height+1, w_width), dtype=int)
         # End Debugging code
 
         row_start, row_end = int(np.floor(window.row_off)), int(np.ceil(window.row_off + window.height))
@@ -102,7 +102,16 @@ class Scanline(ZonalStatMethod):
 
         intersection_table = []
         for f_index, inter in enumerate(all_intersections):
-            for ml in inter.geoms:
+            if inter.is_empty:
+                continue
+            if isinstance(inter, MultiLineString):
+                geoms = list(inter.geoms)
+            elif isinstance(inter, LineString):
+                geoms = [inter]
+            else:
+                raise TypeError(f"Unexpected intersection type: {type(inter)}")
+            
+            for ml in geoms:
                 # f_index, y, x0, x1, (space for row, col1,col2) 
                 coords = np.asarray(ml.coords)
                 y_ = coords[0][1]
@@ -112,6 +121,10 @@ class Scanline(ZonalStatMethod):
                     f_index, y_, x0, x1
                 ))
 
+        if not intersection_table:
+            self.results = [self.stats.from_array(np.ma.array([], mask=True)) for _ in features.geometry]
+            return
+        
         intersection_table = np.array(intersection_table)
         inter_x0s = intersection_table[:, 2]
         inter_x1s = intersection_table[:, 3]
@@ -153,9 +166,13 @@ class Scanline(ZonalStatMethod):
                 width=max_col - min_col,
                 height=1
             )
-            
+
             # Does not handle nodata
-            data = raster.read(1, window=reading_window, masked=False)[0]
+            data = raster.read(1, window=reading_window, masked=True)
+            if data.shape[0] == 0:
+                continue
+            data = data[0]
+
             for j, col0, col1, f_index in reading_line:
 
                 c0 = col0 - min_col
@@ -164,10 +181,10 @@ class Scanline(ZonalStatMethod):
                 
                 # Debugging code
                 # mark the pixels in the global mask
-                row_in_mask = row - row_start
-                col0_in_mask = col0 - col_start
-                col1_in_mask = col1 - col_start
-                global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+                # row_in_mask = row - row_start
+                # col0_in_mask = col0 - col_start
+                # col1_in_mask = col1 - col_start
+                # global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
                 # End Debugging code
 
                 if len(pixel_values) > 0:
@@ -177,9 +194,12 @@ class Scanline(ZonalStatMethod):
         # combine the results
         results_per_feature = []
         for i in range(len(pixel_values_per_feature)):
-            feature_data = np.concatenate(pixel_values_per_feature[i])
+            if not pixel_values_per_feature[i]:
+                feature_data = np.ma.array([], mask=True)
+            else:
+                feature_data = np.ma.concatenate(pixel_values_per_feature[i])
             # get the stats
-            r = self._compute_stats_from_array(feature_data)
+            r = self.stats.from_array(feature_data)
             results_per_feature.append(r)
 
         self.results = results_per_feature
