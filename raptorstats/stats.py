@@ -216,6 +216,8 @@ class Stats:
         histogram     = collections.Counter()
 
         for r in chunks:
+            total_nodata += r.get("nodata", 0) or 0
+            total_nan    += r.get("nan", 0) or 0
             n = r.get("count", 0) or 0
             if not n:
                 continue
@@ -231,9 +233,6 @@ class Stats:
             total_count = new_count
             total_sum += s
             total_mean += delta * n / new_count
-
-            total_nodata += r.get("nodata", 0) or 0
-            total_nan    += r.get("nan", 0) or 0
 
             if "min" in r and not np.isnan(r["min"]):
                 global_min = min(global_min, r["min"])
