@@ -12,7 +12,7 @@ from shapely.geometry import Polygon
 
 from raptorstats import zonal_stats
 import geopandas as gpd
-from rasterstats.utils import VALID_STATS
+from raptorstats.stats import VALID_STATS
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -154,9 +154,9 @@ def test_specify_all_stats():
     polygons = os.path.join(DATA, "polygons.shp")
     stats = zonal_stats(polygons, raster, stats="ALL")
     # sum_sq and histogram are required for combined stats of std and median
-    assert sorted(stats[0].keys()) == sorted(VALID_STATS + ["sum_sq", "histogram"])
+    assert sorted(stats[0].keys()) == sorted(VALID_STATS)
     stats = zonal_stats(polygons, raster, stats="*")
-    assert sorted(stats[0].keys()) == sorted(VALID_STATS + ["sum_sq", "histogram"])
+    assert sorted(stats[0].keys()) == sorted(VALID_STATS)
 
 
 def test_specify_stats_string():

@@ -55,6 +55,8 @@ def zonal_stats(
         sl = Scanline()
         results = sl(ds, gdf, stats=stats_conf)   # Scanline.__call__ returns list[dict]
 
+        results = stats_conf.clean_results(results)
+        
         # ---- 5. attach / post-process ----
         if prefix:
             results = [

@@ -39,7 +39,9 @@ class Stats:
                     "Stat `%s` not valid; " "must be one of \n %r" % (token, VALID_STATS)
                 )
 
+        requested = set(stats)
         required = set(stats)
+        required.update({ "count" }) # count is always useful
 
         if {"mean", "std", "median"} & required or percentiles:
             required.update({"count", "sum"})
@@ -47,10 +49,10 @@ class Stats:
             required.update({"sum_sq"})
         if "range" in required:
             required.update({"min", "max"})
-        if { "median" } & required or percentiles:
-            categorical = True
-
-        run_count = categorical or required & {"majority", "minority", "unique"}
+        
+        run_count = categorical or \
+            percentiles or \
+            required & {"majority", "minority", "unique", "median"}
 
         ordered = []
         for tok in (stats + VALID_STATS):
@@ -60,10 +62,23 @@ class Stats:
         for tok in required:
             ordered.append(tok)
 
+        self.requested = requested
         self.stats = ordered
         self.categorical = categorical
         self.run_count = run_count
         self.percentiles = percentiles
+
+    def clean_results(self, results):
+        
+        for res in results:
+            if not res:
+                continue
+            for k in list(res.keys()):
+                if self.categorical and k == "histogram":
+                    continue
+                if k not in self.requested:
+                    del res[k]
+        return results
 
     def _get_percentile(self, stat):
         if not stat.startswith("percentile_"):
@@ -160,10 +175,9 @@ class Stats:
                 if "minority" in self.stats and counter:
                     out["minority"] = float(min(counter, key=counter.get))
 
-                if self.categorical:
-                    out["histogram"] = counter
-        elif self.categorical:
-            # empty input, but categorical requested
+                out["histogram"] = counter
+
+        elif self.run_count:
             out["histogram"] = {}
 
         return out
@@ -188,7 +202,9 @@ class Stats:
 
         # nothing at all
         if not chunks:
-            return {stat: np.nan for stat in self.stats}
+            out = {stat: np.nan for stat in self.stats}
+            out["count"] = 0
+            return out
 
         if len(chunks) == 1:
             return chunks[0].copy()
@@ -228,9 +244,10 @@ class Stats:
         if "nan" in self.stats:
             out["nan"] = int(total_nan)
 
+        if "count" in self.stats:
+            out["count"] = int(total_count)
+
         if total_count:
-            if "count" in self.stats:
-                out["count"] = int(total_count)
             if "sum" in self.stats:
                 out["sum"] = float(total_sum)
             if "min" in self.stats:
@@ -268,6 +285,9 @@ class Stats:
                     out["majority"] = float(max(histogram, key=histogram.get))
                 if "minority" in self.stats:
                     out["minority"] = float(min(histogram, key=histogram.get))
-                out.update(histogram)
+                out['histogram'] = dict(histogram)
+        elif self.run_count:
+            # empty input, but categorical requested
+            out["histogram"] = dict(histogram)
 
         return out
