@@ -99,7 +99,12 @@ class Scanline(ZonalStatMethod):
             np.stack([x1s, ys], axis=1)
         ], axis=1)
 
+
+        # for g in features.geometry:
+        #     shapely.prepare(g)
         scanlines = MultiLineString(list(all_points))
+        # shapely.prepare(scanlines)
+
         all_intersections = scanlines.intersection(features.geometry)
 
         intersection_table = []
