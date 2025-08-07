@@ -40,13 +40,16 @@ def _assert_dict_eq(a, b):
 
 
 
-def test_dataset_mask():
+def test_all_nodata():
     polygons = os.path.join(DATA, "polygons.shp")
-    raster = os.path.join(DATA, "dataset_mask.tif")
-    stats = zonal_stats(polygons, raster, stats="*")
-    assert stats[0]["count"] == 75
+    raster = os.path.join(DATA, "all_nodata.tif")
+    stats = zonal_stats(polygons, raster, stats=["nodata", "count"])
+    assert stats[0]["nodata"] == 75
+    assert stats[0]["count"] == 0
+    assert stats[1]["nodata"] == 50
     assert stats[1]["count"] == 0
 
 
 
-test_dataset_mask()
+
+test_all_nodata()

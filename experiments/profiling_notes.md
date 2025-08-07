@@ -34,10 +34,20 @@ Inconsistent results, probably mostly the same
    108         7    9259383.3 1.32e+06     11.7          all_intersections = scanlines.intersection(features.geometry)
 ```
 
-### Excessive np.ma.concatenate calls
+### Excessive np.ma.concatenate calls ?
 
 FIX THIS
 
 ```
    223       245     357354.8   1458.6      5.0                  feature_data = np.ma.concatenate(pixel_values_per_feature[i])
 ```
+
+### Combining partials instead of accumulating
+
+Combining partials
+Total time: 46.3969 s
+
+219     79702   28198373.0    353.8     60.8                      partials_per_feature[f_index].append(self.stats.from_array(pixel_values))
+231       343    4459274.9  13000.8      9.6              r = self.stats.from_partials(partials_per_feature[i])
+
+Accumulating
