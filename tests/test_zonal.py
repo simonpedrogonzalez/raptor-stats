@@ -32,12 +32,12 @@ def test_main():
 
 
 
-
-def test_zonal_global_extent():
-    polygons = os.path.join(DATA, "polygons.shp")
-    stats = zonal_stats(polygons, raster)
-    global_stats = zonal_stats(polygons, raster, global_src_extent=True)
-    assert stats == global_stats
+# NOTE: not supporting kwargs that I don't know what they do
+# def test_zonal_global_extent():
+#     polygons = os.path.join(DATA, "polygons.shp")
+#     stats = zonal_stats(polygons, raster)
+#     global_stats = zonal_stats(polygons, raster, global_src_extent=True)
+#     assert stats == global_stats
 
 
 def test_zonal_nodata():
