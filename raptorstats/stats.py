@@ -46,7 +46,7 @@ class Stats:
         if {"mean", "std", "median"} & required or percentiles:
             required.update({"count", "sum"})
         if "std" in required:
-            required.update({"sum_sq"})
+            required.update({"mean"})
         if "range" in required:
             required.update({"min", "max"})
         
@@ -147,14 +147,9 @@ class Stats:
             if "range" in self.stats:
                 out["range"] = float(valid.max() - valid.min())
 
-            sum_sq = None
-            if "sum_sq" in self.stats:
-                sum_sq = (valid ** 2).sum()
-                out["sum_sq"] = float(sum_sq)
             if "std" in self.stats:
-                out["std"] = float(
-                    np.sqrt((sum_sq - (valid.sum() ** 2) / n) / n)
-                )
+                out["std"] = float(np.std(valid, ddof=0))
+            
             if "median" in self.stats:
                 out["median"] = float(np.median(valid))
 
@@ -212,7 +207,8 @@ class Stats:
         # helpers to accumulate
         total_count   = 0
         total_sum     = 0.0
-        total_sum_sq  = 0.0
+        total_mean    = 0.0
+        total_M2      = 0.0
         total_nodata  = 0
         total_nan     = 0
         global_min    = np.inf
@@ -220,16 +216,25 @@ class Stats:
         histogram     = collections.Counter()
 
         for r in chunks:
-            c = r.get("count", 0) or 0
-            s = r.get("sum", 0.0) or 0.0
-            ss= r.get("sum_sq", 0.0) or (r.get("std") and c and
-                                        (r["std"]**2 + (s/c)**2) * c) or 0.0
+            n = r.get("count", 0) or 0
+            if not n:
+                continue
+            
+            s = r.get("sum", 0.0) or 0.0            
+            m = r.get("mean", np.nan) or np.nan
+            std = r.get("std", np.nan) or np.nan
+            
+            delta = m - total_mean
+            new_count = total_count + n
+            M2 = std ** 2 * n if not np.isnan(std) else 0.0
+            total_M2 += M2 + delta**2 * total_count * n / new_count
+            total_count = new_count
+            total_sum += s
+            total_mean += delta * n / new_count
 
-            total_count  += c
-            total_sum    += s
-            total_sum_sq += ss
             total_nodata += r.get("nodata", 0) or 0
             total_nan    += r.get("nan", 0) or 0
+
             if "min" in r and not np.isnan(r["min"]):
                 global_min = min(global_min, r["min"])
             if "max" in r and not np.isnan(r["max"]):
@@ -259,11 +264,8 @@ class Stats:
             if "range" in self.stats:
                 out["range"] = float(global_max - global_min)
 
-            if "sum_sq" in self.stats:
-                out["sum_sq"] = float(total_sum_sq)
-            if "std" in self.stats and total_count:
-                var = (total_sum_sq - (total_sum ** 2) / total_count) / total_count
-                out["std"] = float(np.sqrt(max(var, 0.0)))  # guard FP jitter
+            if "std" in self.stats:
+                out["std"] = float(np.sqrt(total_M2 / total_count))
 
             if "median" in self.stats or self.percentiles:
                 # build cumulative distribution

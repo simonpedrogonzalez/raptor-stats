@@ -16,8 +16,8 @@ exp = Experiment(
     vector_path=US_states,
     func=zonal_stats,
     reps=7,
-    stats=["count"],
-    check_results=False,
+    stats="*",
+    check_results=True,
 )
 
 if __name__ == "__main__":

@@ -133,28 +133,23 @@ def compare_stats(
     with rio.open(raster_path) as ds:
         # 1. your Scanline
 
-        # 2. masking
-        mask = Masking()
-        mask_res = mask(ds, gdf, stats=list(stats))
-
         # 3. rasterstats (all_touched=True like your Masking wrapper)
-        rs_res = zonal_stats(vector_path, raster_path, stats=stats)
+        rs_res = zonal_stats(vector_path, raster_path, stats=stats.requested)
 
     # --- pretty print ------------------------------------------------------
     pp = pprint.PrettyPrinter(compact=True, sort_dicts=True)
 
     print("\n=== Zonal-stat comparison ===")
-    for i, (s, m, r) in enumerate(zip(scan_res, mask_res, rs_res), start=1):
+    for i, (s, r) in enumerate(zip(scan_res, rs_res), start=1):
         print(f"\nFeature #{i}")
         print("  Scanline : ", end=""); pp.pprint(s)
-        print("  Masking  : ", end=""); pp.pprint(m)
+        # print("  Masking  : ", end=""); pp.pprint(m)
         print("  RasterSt : ", end=""); pp.pprint(r)
 
         if show_diff:
             diff = {}
-            for k in set(s) | set(m) | set(r):
+            for k in set(s) & set(r):
                 sv = round(s.get(k, float("nan")), precision)
-                mv = round(m.get(k, float("nan")), precision)
                 rv = round(r.get(k, float("nan")), precision)
                 # show diff vs rasterstats (change to scanline vs masking if you prefer)
                 if all(isinstance(v, (int, float)) for v in (sv, rv)):

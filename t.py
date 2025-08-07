@@ -39,16 +39,14 @@ def _assert_dict_eq(a, b):
         
 
 
-def test_main():
+
+def test_dataset_mask():
     polygons = os.path.join(DATA, "polygons.shp")
-    stats = zonal_stats(polygons, raster)
-    for key in ["count", "min", "max", "mean"]:
-        assert key in stats[0]
-    assert len(stats) == 2
+    raster = os.path.join(DATA, "dataset_mask.tif")
+    stats = zonal_stats(polygons, raster, stats="*")
     assert stats[0]["count"] == 75
-    assert stats[1]["count"] == 50
-    assert round(stats[0]["mean"], 2) == 14.66
+    assert stats[1]["count"] == 0
 
 
 
-test_main()
+test_dataset_mask()

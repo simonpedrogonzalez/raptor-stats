@@ -120,8 +120,8 @@ class Experiment:
 
     def run(self):
 
-        if 'count' not in self.stats:
-            self.stats.append("count")
+        # if 'count' not in self.stats:
+        #     self.stats.append("count")
 
         print(f"Starting experiment with {self.reps} repetitions")
         print(f"Function: {self.func.__name__}")
@@ -138,11 +138,20 @@ class Experiment:
             self._reset()
             
             # I'm wrapping the func call with the profiler
-            result, metrics = profile(self.func)(self.vector_path, self.raster_path, self.stats)
+            result, metrics = profile(self.func)(self.vector_path, self.raster_path, self.stats, categorical=True)
             
             if self.check_results:
                 correct, errors = result_within_tolerance(truth[0], truth[1], result)
                 if not correct:
+                    try:
+                        e_ind = errors["index"]
+                        import geopandas as gpd
+                        gdf = gpd.read_file(self.vector_path)
+                        name = gdf.iloc[e_ind]["NAME"]
+                        # show the name of the polygon
+                        print(f"Error in polygon {e_ind} ({name}): {errors}")
+                    except Exception as e:
+                        pass
                     raise ValueError(f"Error in result: {errors}")
             
             metric_list.append(metrics)

@@ -15,10 +15,10 @@ def zonal_stats(
         band=1,
         nodata=None,
         affine=None,
-        geojson_out=False,
+        # geojson_out=False,
         prefix=None,
         categorical=False,
-        **kwargs,
+        # **kwargs,
 ):
     """
     Zonal statistics using the Scanline rasterisation method.
@@ -56,7 +56,7 @@ def zonal_stats(
         results = sl(ds, gdf, stats=stats_conf)   # Scanline.__call__ returns list[dict]
 
         results = stats_conf.clean_results(results)
-        
+
         # ---- 5. attach / post-process ----
         if prefix:
             results = [
