@@ -213,3 +213,4 @@ uv.lock
 data/*
 profile_method.py.lprof
 results/*
+experiments/profile_results.txt
