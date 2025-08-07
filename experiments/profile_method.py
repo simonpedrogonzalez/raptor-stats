@@ -1,5 +1,5 @@
 from experiment import Experiment
-from constants import VECTOR_DATA_PATH, RASTER_DATA_PATH, US_counties, US_MSR_resampled_x4
+from constants import VECTOR_DATA_PATH, RASTER_DATA_PATH, US_counties, US_MSR_resampled_x4, US_states
 from reference import reference_method
 from raptorstats import zonal_stats
 
@@ -13,11 +13,11 @@ from raptorstats import zonal_stats
 
 exp = Experiment(
     raster_path=US_MSR_resampled_x4,
-    vector_path=US_counties,
+    vector_path=US_states,
     func=zonal_stats,
     reps=7,
     stats=["count"],
-    check_results=True,
+    check_results=False,
 )
 
 if __name__ == "__main__":
