@@ -209,3 +209,7 @@ __marimo__/
 uv.lock
 
 .python-version
+
+data/*
+profile_method.py.lprof
+results/*

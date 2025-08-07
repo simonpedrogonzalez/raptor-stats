@@ -59,7 +59,6 @@ class ZonalStatMethod():
         -------
         List[Dict[str, float]]
         """
-
         self.stats = stats
         self.raster = raster
         self.features = features

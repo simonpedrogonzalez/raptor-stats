@@ -39,31 +39,16 @@ def _assert_dict_eq(a, b):
         
 
 
-def test_nan_counts():
-    from affine import Affine
-
-    transform = Affine(1, 0, 1, 0, -1, 3)
-
-    data = np.array([[np.nan, np.nan, np.nan], [0, 0, 0], [1, 4, 5]])
-
-    # geom extends an additional row to left
-    geom = "POLYGON ((1 0, 4 0, 4 3, 1 3, 1 0))"
-
-    # nan stat is requested
-    stats = zonal_stats(geom, data, affine=transform, nodata=0.0, stats="*")
-
-    for res in stats:
-        assert res["count"] == 3  # 3 pixels of valid data
-        assert res["nodata"] == 3  # 3 pixels of nodata
-        assert res["nan"] == 3  # 3 pixels of nans
-
-    # nan are ignored if nan stat is not requested
-    stats = zonal_stats(geom, data, affine=transform, nodata=0.0, stats="count nodata")
-
-    for res in stats:
-        assert res["count"] == 3  # 3 pixels of valid data
-        assert res["nodata"] == 3  # 3 pixels of nodata
-        assert "nan" not in res
+def test_main():
+    polygons = os.path.join(DATA, "polygons.shp")
+    stats = zonal_stats(polygons, raster)
+    for key in ["count", "min", "max", "mean"]:
+        assert key in stats[0]
+    assert len(stats) == 2
+    assert stats[0]["count"] == 75
+    assert stats[1]["count"] == 50
+    assert round(stats[0]["mean"], 2) == 14.66
 
 
-test_nan_counts()
+
+test_main()

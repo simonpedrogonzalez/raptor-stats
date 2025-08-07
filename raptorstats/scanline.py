@@ -1,12 +1,13 @@
 from raptorstats.zone_stat_method import ZonalStatMethod
-from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
+# from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
 import rasterio as rio
 import geopandas as gpd
 import numpy as np
 from shapely import MultiLineString, LineString
+import shapely
 import matplotlib.pyplot as plt
-from rasterio.windows import transform as window_transform   # handy helper
-# import line_profiler
+# from rasterio.windows import transform as window_transform   # handy helper
+import line_profiler
 
 
 class Scanline(ZonalStatMethod):
@@ -16,6 +17,7 @@ class Scanline(ZonalStatMethod):
     def __init__(self):
         super().__init__()
 
+    @line_profiler.profile
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         transform = raster.transform
@@ -24,7 +26,7 @@ class Scanline(ZonalStatMethod):
 
         def rows_to_ys(rows):
             return (transform * (0, rows + 0.5))[1]
-        
+
         # def rowcol_to_xy(rows, cols):
         #     # coords of pixel centers
         #     xs, ys = (transform * (cols + 0.5, rows + 0.5))
@@ -32,7 +34,7 @@ class Scanline(ZonalStatMethod):
 
         # def ys_to_rows(ys):
         #     return ((~transform) * (np.zeros_like(ys), ys))[1].astype(int)
-        
+
         def xy_to_rowcol(xs, ys, left=True):
             cols, rows = (~transform) * (xs, ys)
             # if left:
@@ -57,7 +59,7 @@ class Scanline(ZonalStatMethod):
         # def x_to_col_end(xs):
         #     """Last col whose centre is left of xs (inclusive)."""
         #     return np.floor((xs - c) / a - 0.5).astype(int)
-        
+
         # get window for the entire features, that is, the bounding box for all features
         # window = rio.windows.from_bounds(
         #     *features.total_bounds,
@@ -87,7 +89,7 @@ class Scanline(ZonalStatMethod):
         x1 = (raster.transform * (col_end, 0))[0]
         all_rows = np.arange(row_start, row_end + 1)
         ys = rows_to_ys(all_rows)
-        
+
         x0s = np.full_like(ys, x0, dtype=float)
         x1s = np.full_like(ys, x1, dtype=float)
 
@@ -105,18 +107,38 @@ class Scanline(ZonalStatMethod):
             if inter.is_empty:
                 continue
             if isinstance(inter, MultiLineString):
-                geoms = list(inter.geoms)
+                geoms = inter.geoms
             elif isinstance(inter, LineString):
                 geoms = [inter]
             else:
                 raise TypeError(f"Unexpected intersection type: {type(inter)}")
-            
+
+            # g_arr = np.asarray(geoms, dtype=object)
+            # starts = shapely.get_point(g_arr, 0)
+            # ends = shapely.get_point(g_arr, -1)
+            # x0s = shapely.get_x(starts)
+            # x1s = shapely.get_x(ends)
+            # ys = shapely.get_y(starts)
+
+            # vertically stack the intersections
+            # creating a numpy array of shape (n, 4)
+            # with f_index, y, x0, x1
+            # intersection_table.extend(zip(
+            #     np.full_like(ys, f_index, dtype=int),
+            #     ys,
+            #     x0s,
+            #     x1s
+            # ))
+
+
             for ml in geoms:
-                # f_index, y, x0, x1, (space for row, col1,col2) 
-                coords = np.asarray(ml.coords)
-                y_ = coords[0][1]
-                x0 = coords[0][0]
-                x1 = coords[-1][0]
+                # f_index, y, x0, x1, (space for row, col1,col2)
+                # coords = np.asarray(ml.coords)
+                x0, y_ = ml.coords[0]     # C-level direct index: one tuple, no loop
+                x1, _  = ml.coords[-1]
+                # y_ = coords[0][1]
+                # x0 = coords[0][0]
+                # x1 = coords[-1][0]
                 intersection_table.append((
                     f_index, y_, x0, x1
                 ))
@@ -124,7 +146,7 @@ class Scanline(ZonalStatMethod):
         if not intersection_table:
             self.results = [self.stats.from_array(np.ma.array([], mask=True)) for _ in features.geometry]
             return
-        
+
         intersection_table = np.array(intersection_table)
         inter_x0s = intersection_table[:, 2]
         inter_x1s = intersection_table[:, 3]
@@ -157,7 +179,7 @@ class Scanline(ZonalStatMethod):
             start = row_starts[i]
             end = row_starts[i+1] if i+1 < len(row_starts) else len(reading_table)
             reading_line = reading_table[start:end]
-            
+
             min_col = np.min(reading_line[:, 1])
             max_col = np.max(reading_line[:, 2])
             reading_window = rio.windows.Window(
@@ -178,7 +200,7 @@ class Scanline(ZonalStatMethod):
                 c0 = col0 - min_col
                 c1 = col1 - min_col
                 pixel_values = data[c0:c1]
-                
+
                 # Debugging code
                 # mark the pixels in the global mask
                 # row_in_mask = row - row_start
@@ -189,7 +211,7 @@ class Scanline(ZonalStatMethod):
 
                 if len(pixel_values) > 0:
                     pixel_values_per_feature[f_index].append(pixel_values)
-        
+
 
         # combine the results
         results_per_feature = []
@@ -209,12 +231,12 @@ class Scanline(ZonalStatMethod):
         # ref_mask = ref_mask_rasterstats(features, raster, window)
         # compare_stats(self.results,
         #     self.raster_file_path.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
-        
+
         # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=inter_ys)
         # print('done')
-        # end of debugging code    
-        
-    
+        # end of debugging code
+
+
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         self._precomputations(features, raster)
         return self.results
