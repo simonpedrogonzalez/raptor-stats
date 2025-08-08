@@ -12,7 +12,6 @@ from affine import Affine
 from rasterio.io import MemoryFile
 from rasterio.vrt import WarpedVRT
 from shapely import wkt
-from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 
 
@@ -20,7 +19,6 @@ def validate_raster_vector_compatibility(
     raster: rio.DatasetReader, vector: gpd.GeoDataFrame
 ):
     raster_crs = raster.crs
-    raster_bounds = raster.bounds
     vector_crs = vector.crs
 
     if not str(raster_crs) == str(vector_crs):
@@ -174,15 +172,14 @@ def open_vector(
         The caller can attach extra attributes with `gdf.attrs[...]`.
     """
 
-    # --------- already a GeoDataFrame ----------------------------------
+    # GeoDataFrame
     if isinstance(vectors, gpd.GeoDataFrame):
         gdf = vectors.copy()
 
-    # --------- file path / URL -----------------------------------------
+    # String
     elif isinstance(vectors, (str, Path)):
         try:
             gdf = gpd.read_file(vectors, layer=layer)
-
             # remember original pathname so later code can emit it if needed
             gdf.attrs["file_path"] = str(vectors)
         except Exception:
@@ -190,18 +187,18 @@ def open_vector(
             try:
                 gdf = gpd.GeoDataFrame({"geometry": [wkt.loads(vectors)]}, crs=crs)
             except Exception:
-                # maybe it's a GeoJSON mapping?
+                # maybe it's an unparsed GeoJSON mapping?
                 gdf = gpd.GeoDataFrame.from_features(json.loads(vectors), crs=crs)
             except Exception as e:
                 raise ValueError(f"Cannot read vector data from {vectors!r}: {e}")
 
-    # --------- GeoJSON mapping -----------------------------------------
+    # dict GeoJSON-like mapping
     elif isinstance(vectors, dict):
         if "type" not in vectors:
             raise ValueError("GeoJSON mapping must have a 'type' key")
         gdf = gpd.GeoDataFrame.from_features(vectors, crs=crs)
 
-    # --------- single geometry or sequence of geometries ---------------
+    # single geometry or sequence of geometries
     elif isinstance(vectors, BaseGeometry) or (
         isinstance(vectors, (list, tuple))
         and all(isinstance(g, BaseGeometry) for g in vectors)
@@ -209,18 +206,14 @@ def open_vector(
         geoms = [vectors] if isinstance(vectors, BaseGeometry) else list(vectors)
         gdf = gpd.GeoDataFrame({"geometry": geoms}, crs=crs)
 
-    # --------- anything else -------------------------------------------
+    # i give up
     else:
         raise TypeError(
             "Unsupported vector input. Must be a file path, GeoDataFrame, "
             "Shapely geometry, GeoJSON mapping, or sequence of geometries."
         )
 
-    # -------------------------------------------------------------------
-    # ensure CRS
-    # -------------------------------------------------------------------
     if gdf.crs is None:
-        # try to inherit CRS from raster via its Affine (pyproj ≥ 3.6 supports this)
         if crs is None and affine is not None and hasattr(affine, "crs"):
             crs = affine.crs
         if crs is not None:
