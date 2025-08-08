@@ -7,8 +7,7 @@ from shapely import MultiLineString, LineString
 import shapely
 import matplotlib.pyplot as plt
 # from rasterio.windows import transform as window_transform   # handy helper
-import line_profiler
-
+import memory_profiler
 
 class Scanline(ZonalStatMethod):
 
@@ -17,7 +16,7 @@ class Scanline(ZonalStatMethod):
     def __init__(self):
         super().__init__()
 
-    @line_profiler.profile
+    @memory_profiler.profile
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         transform = raster.transform

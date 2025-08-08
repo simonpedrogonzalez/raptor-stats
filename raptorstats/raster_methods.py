@@ -16,10 +16,11 @@ class RasterStatsMasking(ZonalStatMethod):
 
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         return zonal_stats(
+            raster,
             features,
-            self.raster_file_path,
             stats=self.stats,
-            all_touched=True,
+            categorical=True,
+            # all_touched=True,
         )
 
 class Masking(ZonalStatMethod):

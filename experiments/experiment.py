@@ -138,7 +138,7 @@ class Experiment:
             self._reset()
             
             # I'm wrapping the func call with the profiler
-            result, metrics = profile(self.func)(self.vector_path, self.raster_path, self.stats, categorical=True)
+            result, metrics = profile(self.func)(self.vector_path, self.raster_path, self.stats)
             
             if self.check_results:
                 correct, errors = result_within_tolerance(truth[0], truth[1], result)

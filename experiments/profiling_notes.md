@@ -61,18 +61,4 @@ Conclusion: do not use partials, obviously.
 
 ### numpy split instead of manually slicing for each reading_line
 
-When reading the data from the raster, instead of slicing the row of pixels manually, use `np.split`. Bad:
-```python
- for i, row in enumerate(rows):
-   # read the line ....
-   for j, col0, col1, f_index in reading_line: # reading_line contains the indices and which feature it belongs to
-         c0 = col0 - min_col
-         c1 = col1 - min_col
-         pixel_values = data[c0:c1]
-         if len(pixel_values) > 0:
-            pixel_values_per_feature[f_index].append(pixel_values)
-```
-Good:
-```python
-
-```
+When reading the data from the raster, instead of slicing the row of pixels manually, use `np.split`. No, it can't be used because the reading line might have gaps.
