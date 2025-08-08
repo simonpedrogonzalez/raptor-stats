@@ -1,22 +1,22 @@
-import numpy as np
-import matplotlib.pyplot as plt
 import geopandas as gpd
-from matplotlib.colors import ListedColormap, BoundaryNorm
-from rasterio.plot import plotting_extent
+import matplotlib.pyplot as plt
+import numpy as np
 from affine import Affine
-from rasterio.windows import transform as window_transform 
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from rasterio.plot import plotting_extent
+from rasterio.windows import transform as window_transform
 from rasterstats.io import Raster
 
 
 def plot_mask_comparison(
-        global_mask: np.ndarray,
-        ref_mask:    np.ndarray,
-        features:    gpd.GeoDataFrame,
-        transform:   Affine,
-        window:      tuple = None,
-        title:       str = "Mask comparison",
-        show_grid:   bool = True,
-        scanlines:   np.ndarray = None,
+    global_mask: np.ndarray,
+    ref_mask: np.ndarray,
+    features: gpd.GeoDataFrame,
+    transform: Affine,
+    window: tuple = None,
+    title: str = "Mask comparison",
+    show_grid: bool = True,
+    scanlines: np.ndarray = None,
 ):
     """
     Visualise agreement / disagreement between two binary-or-indexed masks.
@@ -46,7 +46,7 @@ def plot_mask_comparison(
     norm = BoundaryNorm([0, 1, 2, 3, 4], cmap.N)
 
     subset_transform = window_transform(window, transform)
-    extent   = plotting_extent(global_mask, transform=subset_transform)
+    extent = plotting_extent(global_mask, transform=subset_transform)
 
     fig, ax = plt.subplots(figsize=(10, 10))
     ax.set_title(title)
@@ -78,10 +78,11 @@ def plot_mask_comparison(
             ax.axhline(y, color="black", linewidth=0.5, linestyle="--")
     # legend
     from matplotlib.patches import Patch
+
     legend_patches = [
-        Patch(facecolor="gray",  edgecolor="none", label="match"),
-        Patch(facecolor="blue",  edgecolor="none", label="global only"),
-        Patch(facecolor="red",   edgecolor="none", label="ref only"),
+        Patch(facecolor="gray", edgecolor="none", label="match"),
+        Patch(facecolor="blue", edgecolor="none", label="global only"),
+        Patch(facecolor="red", edgecolor="none", label="ref only"),
     ]
     ax.legend(handles=legend_patches, loc="upper right")
 
@@ -90,27 +91,24 @@ def plot_mask_comparison(
     plt.show()
 
 
-import numpy as np
-import geopandas as gpd
-import rasterio as rio
-from raptorstats.raster_methods import Masking
-
 import pprint
 from textwrap import indent
 
 import geopandas as gpd
+import numpy as np
 import rasterio as rio
 from rasterstats import zonal_stats
 
-from raptorstats.raster_methods   import Masking          # <- class you showed
+from raptorstats.raster_methods import Masking  # <- class you showed
+
 
 def compare_stats(
-        mystats, # scanline stats
-        raster_path:   str,
-        vector_path:   str,
-        stats:         list | str = ("min", "max", "mean", "count"),
-        show_diff:     bool = True,
-        precision:     int = 5,
+    mystats,  # scanline stats
+    raster_path: str,
+    vector_path: str,
+    stats: list | str = ("min", "max", "mean", "count"),
+    show_diff: bool = True,
+    precision: int = 5,
 ):
     """
     Run three zonal-stat engines and print results side-by-side.
@@ -142,9 +140,11 @@ def compare_stats(
     print("\n=== Zonal-stat comparison ===")
     for i, (s, r) in enumerate(zip(scan_res, rs_res), start=1):
         print(f"\nFeature #{i}")
-        print("  Scanline : ", end=""); pp.pprint(s)
+        print("  Scanline : ", end="")
+        pp.pprint(s)
         # print("  Masking  : ", end=""); pp.pprint(m)
-        print("  RasterSt : ", end=""); pp.pprint(r)
+        print("  RasterSt : ", end="")
+        pp.pprint(r)
 
         if show_diff:
             diff = {}
@@ -159,11 +159,11 @@ def compare_stats(
     print("\nDone.\n")
 
 
-
 import numpy as np
 import rasterio as rio
 from rasterio.windows import transform as window_transform
 from rasterstats.utils import rasterize_geom
+
 
 def compute_stats(masked: np.ndarray):
     """Computes the statistics for the masked array.
@@ -172,7 +172,7 @@ def compute_stats(masked: np.ndarray):
     should be expected in this part.
     """
 
-    stats = {'min', 'max', 'mean', 'count', 'sum'}
+    stats = {"min", "max", "mean", "count", "sum"}
     stats_out = {}
 
     if masked.compressed().size == 0:
@@ -199,22 +199,22 @@ def compute_stats(masked: np.ndarray):
 
 
 def ref_mask_rasterstats(
-        features,
-        raster: rio.DatasetReader,
-        window: rio.windows.Window,
-        all_touched: bool = False,
+    features,
+    raster: rio.DatasetReader,
+    window: rio.windows.Window,
+    all_touched: bool = False,
 ):
 
     # ---------------- window geometry & output array ----------------------
-    win = window #.round_offsets().round_lengths()
+    win = window  # .round_offsets().round_lengths()
     sub_transform = window_transform(win, raster.transform)
     out_h = int(win.height)
     out_w = int(win.width)
-    ref_mask = np.zeros((out_h, out_w), dtype=np.uint16)   # big enough for 65k features
+    ref_mask = np.zeros((out_h, out_w), dtype=np.uint16)  # big enough for 65k features
 
     # ---------------- iterate over features -------------------------------
     # NOTE: rasterstats loops feature-by-feature; later features overwrite earlier ones.
-    
+
     affine = raster.transform
     nodata = raster.nodata
     band = 1  # rasterstats uses band 1 by default
@@ -224,26 +224,27 @@ def ref_mask_rasterstats(
                 continue
             # geom as shapely object
             # geom = mapping(geom)
-            
+
             # Rasterstats uses a boolean mask from rasterize_geom:
             geom_mask = rasterize_geom(
-                # mapping(geom), 
-                geom=geom,                      # geojson geometry
-                like=type("Like", (), {              # fake "like" object with .shape & .affine
-                    "shape": (out_h, out_w),
-                    "affine": sub_transform
-                })(),
-                all_touched=all_touched
+                # mapping(geom),
+                geom=geom,  # geojson geometry
+                like=type(
+                    "Like",
+                    (),
+                    {  # fake "like" object with .shape & .affine
+                        "shape": (out_h, out_w),
+                        "affine": sub_transform,
+                    },
+                )(),
+                all_touched=all_touched,
             )
 
             # burn feature id (idx+1) where mask is True
             ref_mask[geom_mask] = idx + 1
 
-
             fsrc = raster.read(window=win)
-            has_nan = np.issubdtype(fsrc.dtype, np.floating) and np.isnan(
-                fsrc.min()
-            )
+            has_nan = np.issubdtype(fsrc.dtype, np.floating) and np.isnan(fsrc.min())
             isnodata = fsrc == raster.nodata
             if has_nan:
                 isnodata = isnodata | np.isnan(fsrc)

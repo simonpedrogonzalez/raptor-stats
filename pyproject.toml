@@ -30,4 +30,6 @@ dev = [
     "psutil>=7.0.0",
     "matplotlib>=3.7.1",
     "pytest>=8.4.1",
+    "isort>=6.0.1",
+    "black>=25.1.0",
 ]

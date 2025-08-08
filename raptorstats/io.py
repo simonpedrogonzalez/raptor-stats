@@ -1,23 +1,24 @@
-import rasterio as rio
-from rasterio.vrt import WarpedVRT
-from rasterio.io import MemoryFile
-import numpy as np
-from contextlib import contextmanager
-import os
-from pathlib import Path
-from typing import Union, Sequence
-from shapely import wkt
-
-import geopandas as gpd
-from shapely.geometry.base import BaseGeometry
-from affine import Affine
 import json
-import geopandas as gpd
-import rasterio as rio
-from shapely.geometry import box
+import os
 import warnings
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Sequence, Union
 
-def validate_raster_vector_compatibility(raster: rio.DatasetReader,  vector: gpd.GeoDataFrame):
+import geopandas as gpd
+import numpy as np
+import rasterio as rio
+from affine import Affine
+from rasterio.io import MemoryFile
+from rasterio.vrt import WarpedVRT
+from shapely import wkt
+from shapely.geometry import box
+from shapely.geometry.base import BaseGeometry
+
+
+def validate_raster_vector_compatibility(
+    raster: rio.DatasetReader, vector: gpd.GeoDataFrame
+):
     raster_crs = raster.crs
     raster_bounds = raster.bounds
     vector_crs = vector.crs
@@ -25,19 +26,20 @@ def validate_raster_vector_compatibility(raster: rio.DatasetReader,  vector: gpd
     if not str(raster_crs) == str(vector_crs):
         warnings.warn(
             "Raster and vector CRS do not match. This may lead to incorrect results.",
-            UserWarning
+            UserWarning,
         )
+
 
 def validate_is_north_up(transform):
     not_north_up = (
-        not np.isclose(transform.b, 0) or
-        not np.isclose(transform.d, 0) or
-        transform.e > 0
+        not np.isclose(transform.b, 0)
+        or not np.isclose(transform.d, 0)
+        or transform.e > 0
     )
     if not_north_up:
         warnings.warn(
             "Raster transform is not north-up. This may lead to incorrect results.",
-            UserWarning
+            UserWarning,
         )
 
 
@@ -81,14 +83,14 @@ def open_raster(source, *, affine=None, nodata=None, band=1, crs=None):
             source = np.atleast_2d(source)
 
             profile = {
-                "driver":  "GTiff",
-                "height":  source.shape[0],
-                "width":   source.shape[1],
-                "count":   1,
-                "dtype":   source.dtype,
-                "crs":     crs,
+                "driver": "GTiff",
+                "height": source.shape[0],
+                "width": source.shape[1],
+                "count": 1,
+                "dtype": source.dtype,
+                "crs": crs,
                 "transform": affine,
-                "nodata":  nodata,
+                "nodata": nodata,
             }
 
             memfile = MemoryFile()
@@ -129,10 +131,10 @@ def open_raster(source, *, affine=None, nodata=None, band=1, crs=None):
 
     finally:
         # Clean up in reverse order
-        if 'ds' in locals() and close_ds:
+        if "ds" in locals() and close_ds:
             ds.close()
 
-        if 'base_ds' in locals() and close_base:
+        if "base_ds" in locals() and close_base:
             base_ds.close()
 
         if memfile is not None:
@@ -141,11 +143,12 @@ def open_raster(source, *, affine=None, nodata=None, band=1, crs=None):
 
 def open_vector(
     vectors: Union[
-        str, Path,                     # file path / URL
-        BaseGeometry,                  # single Shapely geometry
-        Sequence[BaseGeometry],        # list/tuple of geometries
-        dict,                          # GeoJSON-like mapping
-        gpd.GeoDataFrame
+        str,
+        Path,  # file path / URL
+        BaseGeometry,  # single Shapely geometry
+        Sequence[BaseGeometry],  # list/tuple of geometries
+        dict,  # GeoJSON-like mapping
+        gpd.GeoDataFrame,
     ],
     *,
     layer: Union[int, str] = 0,
@@ -200,8 +203,8 @@ def open_vector(
 
     # --------- single geometry or sequence of geometries ---------------
     elif isinstance(vectors, BaseGeometry) or (
-        isinstance(vectors, (list, tuple)) and
-        all(isinstance(g, BaseGeometry) for g in vectors)
+        isinstance(vectors, (list, tuple))
+        and all(isinstance(g, BaseGeometry) for g in vectors)
     ):
         geoms = [vectors] if isinstance(vectors, BaseGeometry) else list(vectors)
         gdf = gpd.GeoDataFrame({"geometry": geoms}, crs=crs)

@@ -1,24 +1,30 @@
 import geopandas as gpd
+import memory_profiler
 import rasterio as rio
-from raptorstats.io import open_raster, open_vector, validate_raster_vector_compatibility, validate_is_north_up
 
+from raptorstats.io import (
+    open_raster,
+    open_vector,
+    validate_is_north_up,
+    validate_raster_vector_compatibility,
+)
 from raptorstats.scanline import Scanline
 from raptorstats.stats import Stats
-import memory_profiler
+
 
 # @memory_profiler.profile
 def zonal_stats(
-        vectors,
-        raster,
-        stats=None,
-        layer=0,
-        band=1,
-        nodata=None,
-        affine=None,
-        # geojson_out=False,
-        prefix=None,
-        categorical=False,
-        # **kwargs,
+    vectors,
+    raster,
+    stats=None,
+    layer=0,
+    band=1,
+    nodata=None,
+    affine=None,
+    # geojson_out=False,
+    prefix=None,
+    categorical=False,
+    # **kwargs,
 ):
     """
     Zonal statistics using the Scanline rasterisation method.
@@ -44,7 +50,6 @@ def zonal_stats(
     stats_conf = Stats(stats, categorical=categorical)
 
     # ---- 2. read vectors (GeoPandas) ----
-    
 
     # ---- 3. open raster once ----
     with open_raster(raster, affine=affine, nodata=nodata, band=band) as ds:
@@ -54,10 +59,9 @@ def zonal_stats(
         validate_is_north_up(ds.transform)
         validate_raster_vector_compatibility(ds, gdf)
 
-
         # ---- 4. run Scanline ----
         sl = Scanline()
-        results = sl(ds, gdf, stats=stats_conf)   # Scanline.__call__ returns list[dict]
+        results = sl(ds, gdf, stats=stats_conf)  # Scanline.__call__ returns list[dict]
 
         results = stats_conf.clean_results(results)
 
@@ -79,4 +83,3 @@ def zonal_stats(
         #         features_out.append(f)
         #     return features_out
         return results
-

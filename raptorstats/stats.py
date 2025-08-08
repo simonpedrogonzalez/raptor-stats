@@ -1,4 +1,5 @@
 import collections
+
 import numpy as np
 
 DEFAULT_STATS = ["count", "min", "max", "mean"]
@@ -15,6 +16,7 @@ VALID_STATS = DEFAULT_STATS + [
     "nan",
 ]
 
+
 class Stats:
     """Configuration for statistics computation.
 
@@ -29,19 +31,20 @@ class Stats:
                 stats = VALID_STATS
             else:
                 stats = stats.split()
-        
+
         percentiles = []
         for token in stats:
             if token.startswith("percentile_"):
                 percentiles.append(self._get_percentile(token))
             elif token not in VALID_STATS:
                 raise ValueError(
-                    "Stat `%s` not valid; " "must be one of \n %r" % (token, VALID_STATS)
+                    "Stat `%s` not valid; "
+                    "must be one of \n %r" % (token, VALID_STATS)
                 )
 
         requested = set(stats)
         required = set(stats)
-        required.update({ "count" }) # count is always useful
+        required.update({"count"})  # count is always useful
 
         if {"mean", "std", "median"} & required or percentiles:
             required.update({"count", "sum"})
@@ -49,13 +52,15 @@ class Stats:
             required.update({"mean"})
         if "range" in required:
             required.update({"min", "max"})
-        
-        run_count = categorical or \
-            percentiles or \
-            required & {"majority", "minority", "unique", "median"}
+
+        run_count = (
+            categorical
+            or percentiles
+            or required & {"majority", "minority", "unique", "median"}
+        )
 
         ordered = []
-        for tok in (stats + VALID_STATS):
+        for tok in stats + VALID_STATS:
             if tok in required and tok not in ordered:
                 ordered.append(tok)
                 required.remove(tok)
@@ -69,7 +74,7 @@ class Stats:
         self.percentiles = percentiles
 
     def clean_results(self, results):
-        
+
         for res in results:
             if not res:
                 continue
@@ -114,16 +119,16 @@ class Stats:
         # ---------- normalise to plain ndarray + boolean mask -----------
         if np.ma.isMaskedArray(data):
             mask = data.mask
-            arr  = data.data
+            arr = data.data
         else:
-            arr  = np.asarray(data)
+            arr = np.asarray(data)
             mask = np.zeros(arr.shape, dtype=bool)
 
-        nan_mask   = np.isnan(arr)
+        nan_mask = np.isnan(arr)
         nodata_mask = mask | nan_mask
-        valid      = arr[~nodata_mask]
+        valid = arr[~nodata_mask]
 
-        out = { s : np.nan for s in self.stats }
+        out = {s: np.nan for s in self.stats}
 
         if "nodata" in self.stats:
             out["nodata"] = int(mask.sum())
@@ -149,7 +154,7 @@ class Stats:
 
             if "std" in self.stats:
                 out["std"] = float(np.std(valid, ddof=0))
-            
+
             if "median" in self.stats:
                 out["median"] = float(np.median(valid))
 
@@ -176,8 +181,8 @@ class Stats:
             out["histogram"] = {}
 
         return out
-    
-      # ------------------------------------------------------------------ #
+
+    # ------------------------------------------------------------------ #
 
     def from_partials(self, partials: list[dict]) -> dict:
         """
@@ -205,30 +210,30 @@ class Stats:
             return chunks[0].copy()
 
         # helpers to accumulate
-        total_count   = 0
-        total_sum     = 0.0
-        total_mean    = 0.0
-        total_M2      = 0.0
-        total_nodata  = 0
-        total_nan     = 0
-        global_min    = np.inf
-        global_max    = -np.inf
-        histogram     = collections.Counter()
+        total_count = 0
+        total_sum = 0.0
+        total_mean = 0.0
+        total_M2 = 0.0
+        total_nodata = 0
+        total_nan = 0
+        global_min = np.inf
+        global_max = -np.inf
+        histogram = collections.Counter()
 
         for r in chunks:
             total_nodata += r.get("nodata", 0) or 0
-            total_nan    += r.get("nan", 0) or 0
+            total_nan += r.get("nan", 0) or 0
             n = r.get("count", 0) or 0
             if not n:
                 continue
-            
-            s = r.get("sum", 0.0) or 0.0            
+
+            s = r.get("sum", 0.0) or 0.0
             m = r.get("mean", np.nan) or np.nan
             std = r.get("std", np.nan) or np.nan
-            
+
             delta = m - total_mean
             new_count = total_count + n
-            M2 = std ** 2 * n if not np.isnan(std) else 0.0
+            M2 = std**2 * n if not np.isnan(std) else 0.0
             total_M2 += M2 + delta**2 * total_count * n / new_count
             total_count = new_count
             total_sum += s
@@ -244,7 +249,7 @@ class Stats:
         out = {stat: np.nan for stat in self.stats}
 
         if "nodata" in self.stats:
-                out["nodata"] = int(total_nodata)
+            out["nodata"] = int(total_nodata)
         if "nan" in self.stats:
             out["nan"] = int(total_nan)
 
@@ -270,10 +275,12 @@ class Stats:
                 # build cumulative distribution
                 vals, cnts = zip(*sorted(histogram.items()))
                 cum = np.cumsum(cnts)
+
                 def _quantile(q):
                     target = q / 100.0 * total_count
                     idx = np.searchsorted(cum, target, side="left")
-                    return float(vals[min(idx, len(vals)-1)])
+                    return float(vals[min(idx, len(vals) - 1)])
+
                 if "median" in self.stats:
                     out["median"] = _quantile(50.0)
                 for q in self.percentiles:
@@ -286,7 +293,7 @@ class Stats:
                     out["majority"] = float(max(histogram, key=histogram.get))
                 if "minority" in self.stats:
                     out["minority"] = float(min(histogram, key=histogram.get))
-                out['histogram'] = dict(histogram)
+                out["histogram"] = dict(histogram)
         elif self.run_count:
             # empty input, but categorical requested
             out["histogram"] = dict(histogram)

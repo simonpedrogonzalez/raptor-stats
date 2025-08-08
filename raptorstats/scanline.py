@@ -1,13 +1,16 @@
-from raptorstats.zone_stat_method import ZonalStatMethod
+import geopandas as gpd
+import numpy as np
+
 # Debugging code
 # from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
 # import matplotlib.pyplot as plt
 # End Debugging code
 import rasterio as rio
-import geopandas as gpd
-import numpy as np
-from shapely import MultiLineString, LineString
 import shapely
+from shapely import LineString, MultiLineString
+
+from raptorstats.zone_stat_method import ZonalStatMethod
+
 
 class Scanline(ZonalStatMethod):
 
@@ -20,20 +23,22 @@ class Scanline(ZonalStatMethod):
         # NOTE: ASSUMES NORTH UP, NO SHEAR AFFINE. ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
 
         transform = raster.transform
-        
+
         def rows_to_ys(rows):
             return (transform * (0, rows + 0.5))[1]
 
         def xy_to_rowcol(xs, ys):
             cols, rows = (~transform) * (xs, ys)
-            return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(int).clip(min=0)
-
+            return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(
+                int
+            ).clip(min=0)
 
         window = rio.features.geometry_window(
             raster,
             features.geometry,
             # transform=transform,
-            pad_x=0.5, pad_y=0.5,
+            pad_x=0.5,
+            pad_y=0.5,
         )
 
         # Debugging code
@@ -42,8 +47,12 @@ class Scanline(ZonalStatMethod):
         # global_mask = np.zeros((w_height+1, w_width), dtype=int)
         # End Debugging code
 
-        row_start, row_end = int(np.floor(window.row_off)), int(np.ceil(window.row_off + window.height))
-        col_start, col_end = int(np.floor(window.col_off)), int(np.ceil(window.col_off + window.width))
+        row_start, row_end = int(np.floor(window.row_off)), int(
+            np.ceil(window.row_off + window.height)
+        )
+        col_start, col_end = int(np.floor(window.col_off)), int(
+            np.ceil(window.col_off + window.width)
+        )
 
         x0 = (raster.transform * (col_start - 1, 0))[0]
         x1 = (raster.transform * (col_end, 0))[0]
@@ -54,11 +63,9 @@ class Scanline(ZonalStatMethod):
         x1s = np.full_like(ys, x1, dtype=float)
 
         # all points defining the scanlines
-        all_points = np.stack([
-            np.stack([x0s, ys], axis=1),
-            np.stack([x1s, ys], axis=1)
-        ], axis=1)
-
+        all_points = np.stack(
+            [np.stack([x0s, ys], axis=1), np.stack([x1s, ys], axis=1)], axis=1
+        )
 
         # for g in features.geometry:
         #     shapely.prepare(g)
@@ -89,15 +96,15 @@ class Scanline(ZonalStatMethod):
             # vertically stack the intersections
             # creating a numpy array of shape (n, 4)
             # with f_index, y, x0, x1
-            intersection_table.extend(zip(
-                np.full_like(ys, f_index, dtype=int),
-                ys,
-                x0s,
-                x1s
-            ))
+            intersection_table.extend(
+                zip(np.full_like(ys, f_index, dtype=int), ys, x0s, x1s)
+            )
 
         if not intersection_table:
-            self.results = [self.stats.from_array(np.ma.array([], mask=True)) for _ in features.geometry]
+            self.results = [
+                self.stats.from_array(np.ma.array([], mask=True))
+                for _ in features.geometry
+            ]
             return
 
         intersection_table = np.array(intersection_table)
@@ -109,11 +116,11 @@ class Scanline(ZonalStatMethod):
         rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
         _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
 
-        reading_table = np.stack([
-            rows, col0s, col1s, f_index
-        ], axis=1).astype(int)
+        reading_table = np.stack([rows, col0s, col1s, f_index], axis=1).astype(int)
 
-        reading_table = reading_table[col0s < col1s] # removes pixel reads where both intersections fall in between pixel centers
+        reading_table = reading_table[
+            col0s < col1s
+        ]  # removes pixel reads where both intersections fall in between pixel centers
 
         # sort by row
         reading_table = reading_table[np.argsort(reading_table[:, 0])]
@@ -123,16 +130,13 @@ class Scanline(ZonalStatMethod):
 
         for i, row in enumerate(rows):
             start = row_starts[i]
-            end = row_starts[i+1] if i+1 < len(row_starts) else len(reading_table)
+            end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
             reading_line = reading_table[start:end]
 
             min_col = np.min(reading_line[:, 1])
             max_col = np.max(reading_line[:, 2])
             reading_window = rio.windows.Window(
-                col_off=min_col,
-                row_off=row,
-                width=max_col - min_col,
-                height=1
+                col_off=min_col, row_off=row, width=max_col - min_col, height=1
             )
 
             # Does not handle nodata
@@ -158,7 +162,6 @@ class Scanline(ZonalStatMethod):
                 if len(pixel_values) > 0:
                     pixel_values_per_feature[f_index].append(pixel_values)
 
-
         # combine the results
         results_per_feature = []
         for i in range(len(pixel_values_per_feature)):
@@ -181,10 +184,6 @@ class Scanline(ZonalStatMethod):
         # print('done')
         # end of debugging code
 
-
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         self._precomputations(features, raster)
         return self.results
-
-
-

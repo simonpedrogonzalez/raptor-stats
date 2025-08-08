@@ -1,12 +1,13 @@
-import numpy as np
 import geopandas as gpd
+import line_profiler
+import numpy as np
 import rasterio as rio
 from rasterio.features import geometry_window
-import line_profiler
-from raptorstats.stats import Stats
-    
 
-class ZonalStatMethod():
+from raptorstats.stats import Stats
+
+
+class ZonalStatMethod:
 
     __name__ = "ZonalStatMethod"
 
@@ -27,9 +28,13 @@ class ZonalStatMethod():
         """
         pass
 
-    def _compute_stats(self, feature: gpd.GeoDataFrame, raster: rio.DatasetReader, window: rio.windows.Window):
-        """Method to be implemented by the subclass to compute the statistics of a single geometry.
-        """
+    def _compute_stats(
+        self,
+        feature: gpd.GeoDataFrame,
+        raster: rio.DatasetReader,
+        window: rio.windows.Window,
+    ):
+        """Method to be implemented by the subclass to compute the statistics of a single geometry."""
         raise NotImplementedError
 
     def _run(self, vector_layer: gpd.GeoDataFrame, raster: rio.DatasetReader):
@@ -46,7 +51,9 @@ class ZonalStatMethod():
             results.append(self._compute_stats(feature, raster, window))
         return results
 
-    def __call__(self, raster: rio.DatasetReader, features: gpd.GeoDataFrame, stats: Stats):
+    def __call__(
+        self, raster: rio.DatasetReader, features: gpd.GeoDataFrame, stats: Stats
+    ):
         """User-facing method to compute the zonal statistics.
 
         Parameters
@@ -63,5 +70,5 @@ class ZonalStatMethod():
         self.raster = raster
         self.features = features
 
-        results = self._run(self.features, self.raster)    
+        results = self._run(self.features, self.raster)
         return results

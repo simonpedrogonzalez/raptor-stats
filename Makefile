@@ -15,3 +15,7 @@ compare:
 
 cleanexp:
 	rm -rf results/*
+
+style:
+	isort --profile black raptorstats/*.py
+	black --line-length 88 --preview raptorstats/*.py
