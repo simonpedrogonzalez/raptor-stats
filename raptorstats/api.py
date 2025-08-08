@@ -4,9 +4,9 @@ from raptorstats.io import open_raster, open_vector
 
 from raptorstats.scanline import Scanline
 from raptorstats.stats import Stats
-import line_profiler
+import memory_profiler
 
-@line_profiler.profile
+# @memory_profiler.profile
 def zonal_stats(
         vectors,
         raster,

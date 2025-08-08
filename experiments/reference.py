@@ -3,6 +3,7 @@ import geopandas as gpd
 import rasterio as rio
 import numpy as np
 
+
 def reference_method(raster_file_path, vector_file_path, stats):
     vector = gpd.read_file(vector_file_path)
     zs1 = zonal_stats(vector, raster_file_path, stats=stats, boundless=True, categorical=True)
@@ -94,6 +95,46 @@ def result_within_tolerance(center_based_result, all_touched_result, result, all
                     "high_bound": high_bound
                 }
     return True, {}
+
+
+def exact_match(center_based_result, result, allow_None=True):
+    
+    center_based_result = extract_histogram(center_based_result)
+
+    # per polugon
+    for i in range(len(result)):
+        # per stat
+        if allow_None and (result[i] is None or center_based_result[i] is None):
+            continue
+        
+        h1 = result[i].get("histogram", {})
+        h2 = center_based_result[i].get("histogram", {})
+        correct, errors = compare_histograms(h1, h2)
+        if not correct:
+            return correct, errors
+
+        for key in result[i].keys():
+            if key == "histogram":
+                continue
+            b2 = center_based_result[i][key]
+            value = result[i][key]
+            
+            if not np.allclose(b2, value):
+                if key == "majority" or key == "minority":
+                    # ignore tie cases
+                    m1 = h1[value]
+                    m2 = h2[value]
+                    if m1 == m2:
+                        continue
+                    
+                return False, {
+                    "index": i,
+                    "key": key,
+                    "value": value,
+                    "truth": b2,
+                }
+    return True, {}
+
 
 def compare_results(result1, result2, allow_None=True, **kwargs):
     # per polugon

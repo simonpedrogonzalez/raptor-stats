@@ -9,6 +9,7 @@ INDICES_PATH = "data/indices"
 
 US_MSR_resampled_x2 = f"{RASTER_DATA_PATH}/US_MSR_resampled_x2.tif"
 US_MSR_resampled_x4 = f"{RASTER_DATA_PATH}/US_MSR_resampled_x4.tif"
+US_MSR_resampled_x10 = f"{RASTER_DATA_PATH}/US_MSR_resampled_x10.tif"
 US_MSR = f"{RASTER_DATA_PATH}/US_MSR.tif"
 US_MSR_upsampled_2 = f"{RASTER_DATA_PATH}/US_MSR_upsampled_2.tif"
 US_MSR_upsampled_4 = f"{RASTER_DATA_PATH}/US_MSR_upsampled_4.tif"

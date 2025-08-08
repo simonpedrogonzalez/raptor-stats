@@ -16,7 +16,7 @@ class Scanline(ZonalStatMethod):
     def __init__(self):
         super().__init__()
 
-    @memory_profiler.profile
+    # @memory_profiler.profile
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         transform = raster.transform

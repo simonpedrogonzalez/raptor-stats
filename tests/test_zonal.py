@@ -13,11 +13,13 @@ from shapely.geometry import Polygon
 from raptorstats import zonal_stats
 import geopandas as gpd
 from raptorstats.stats import VALID_STATS
+from utils import compare_stats_exact_match
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 raster = os.path.join(DATA, "slope.tif")
+raster_US = os.path.join(DATA, "US_MSR_resampled_x10.tif")
 
 
 def test_main():
@@ -31,6 +33,14 @@ def test_main():
     assert round(stats[0]["mean"], 2) == 14.66
 
 
+def test_US():
+    states = os.path.join(DATA, "cb_2018_us_state_20m_filtered_filtered.shp")
+    correct_result = os.path.join(DATA, "test_US_results.json")
+    stats = zonal_stats(states, raster_US, stats="*", categorical=True)
+    correct_stats = json.load(open(correct_result))
+    stats = json.loads(json.dumps(stats)) # to ensure histogram keys are strings and such
+    correct, errors = compare_stats_exact_match(correct_stats, stats)
+    assert correct
 
 # NOTE: not supporting kwargs that I don't know what they do
 # def test_zonal_global_extent():
