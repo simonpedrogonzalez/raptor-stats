@@ -3,17 +3,17 @@ import json
 import os
 import sys
 
+import geopandas as gpd
 import numpy as np
 import pytest
 import rasterio
 import simplejson
 from affine import Affine
 from shapely.geometry import Polygon, box
+from utils import compare_stats_exact_match, get_reference_mean, make_raster
 
 from raptorstats import zonal_stats
-import geopandas as gpd
 from raptorstats.stats import VALID_STATS
-from utils import compare_stats_exact_match, make_raster, get_reference_mean
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,9 +38,12 @@ def test_US():
     correct_result = os.path.join(DATA, "test_US_results.json")
     stats = zonal_stats(states, raster_US, stats="*", categorical=True)
     correct_stats = json.load(open(correct_result))
-    stats = json.loads(json.dumps(stats)) # to ensure histogram keys are strings and such
+    stats = json.loads(
+        json.dumps(stats)
+    )  # to ensure histogram keys are strings and such
     correct, errors = compare_stats_exact_match(correct_stats, stats)
     assert correct
+
 
 # NOTE: not supporting kwargs that I don't know what they do
 # def test_zonal_global_extent():
@@ -136,8 +139,9 @@ def test_categorical():
     categorical_raster = os.path.join(DATA, "slope_classes.tif")
     stats = zonal_stats(polygons, categorical_raster, categorical=True)
     assert len(stats) == 2
-    assert stats[0]['histogram'][1.0] == 75
-    assert 5.0 in stats[1]['histogram']
+    assert stats[0]["histogram"][1.0] == 75
+    assert 5.0 in stats[1]["histogram"]
+
 
 # TODO: support categorical maps (e.g. mapping value 5.0 to "cat5")
 # def test_categorical_map():
@@ -236,6 +240,7 @@ def test_no_overlap():
         # no polygon should have any overlap
         assert res["count"] == 0
 
+
 # NOTE: Per definition Scanline is not compatible with all_touched=True
 # def test_all_touched():
 #     polygons = os.path.join(DATA, "polygons.shp")
@@ -286,6 +291,7 @@ def test_ndarray():
     # assert sum([x["count"] for x in stats]) == 3
     # assert round(stats[0]["mean"], 3) == 11.386
     # assert round(stats[1]["mean"], 3) == 35.547
+
 
 # TODO: support add_stats? it may require both a from_array and from_partials method
 # def test_add_stats():
@@ -483,6 +489,7 @@ def test_transform():
     #     stats2 = zonal_stats(polygons, arr, transform=affine.to_gdal())
     # assert stats == stats2
 
+
 def test_prefix():
     polygons = os.path.join(DATA, "polygons.shp")
     stats = zonal_stats(polygons, raster, prefix="TEST")
@@ -490,6 +497,7 @@ def test_prefix():
         assert key not in stats[0]
     for key in ["TESTcount", "TESTmin", "TESTmax", "TESTmean"]:
         assert key in stats[0]
+
 
 # TODO: support geojson_out?
 # def test_geojson_out():
