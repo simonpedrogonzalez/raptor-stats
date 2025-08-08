@@ -1,13 +1,13 @@
 from raptorstats.zone_stat_method import ZonalStatMethod
+# Debugging code
 # from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
+# import matplotlib.pyplot as plt
+# End Debugging code
 import rasterio as rio
 import geopandas as gpd
 import numpy as np
 from shapely import MultiLineString, LineString
 import shapely
-import matplotlib.pyplot as plt
-# from rasterio.windows import transform as window_transform   # handy helper
-import memory_profiler
 
 class Scanline(ZonalStatMethod):
 
@@ -16,57 +16,18 @@ class Scanline(ZonalStatMethod):
     def __init__(self):
         super().__init__()
 
-    # @memory_profiler.profile
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
+        # NOTE: ASSUMES NORTH UP, NO SHEAR AFFINE. ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
 
         transform = raster.transform
-        # ASSUMES NORTH UP, NO SHEAR AFFINE
-        # ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
-
+        
         def rows_to_ys(rows):
             return (transform * (0, rows + 0.5))[1]
 
-        # def rowcol_to_xy(rows, cols):
-        #     # coords of pixel centers
-        #     xs, ys = (transform * (cols + 0.5, rows + 0.5))
-        #     return xs, ys
-
-        # def ys_to_rows(ys):
-        #     return ((~transform) * (np.zeros_like(ys), ys))[1].astype(int)
-
-        def xy_to_rowcol(xs, ys, left=True):
+        def xy_to_rowcol(xs, ys):
             cols, rows = (~transform) * (xs, ys)
-            # if left:
-            #     # cols = np.ceil((xs - c) / a - 0.5).astype(int)
-            #     np.round(cols)
-            # else:
-            #     cols = np.floor((xs - c) / a - 0.5).astype(int)
             return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(int).clip(min=0)
 
-        # def xy_to_rowcol(xs, ys):
-        #     # pixel in which the point is located
-        #     cols, rows = (~transform) * (xs, ys)
-        #     return np.floor(rows).astype(int), np.floor(cols).astype(int)
-
-        # c = transform.c
-        # a = transform.a
-
-        # def x_to_col_start(xs):
-        #     """First col whose centre is at or right of xs."""
-        #     return np.ceil((xs - c) / a - 0.5).astype(int)
-
-        # def x_to_col_end(xs):
-        #     """Last col whose centre is left of xs (inclusive)."""
-        #     return np.floor((xs - c) / a - 0.5).astype(int)
-
-        # get window for the entire features, that is, the bounding box for all features
-        # window = rio.windows.from_bounds(
-        #     *features.total_bounds,
-        #     transform=transform,
-
-        # )
-        # # snap to pixel grid
-        # window = window.round_offsets(op='floor').round_lengths(op='ceil')
 
         window = rio.features.geometry_window(
             raster,
@@ -135,19 +96,6 @@ class Scanline(ZonalStatMethod):
                 x1s
             ))
 
-
-            # for ml in geoms:
-            #     # f_index, y, x0, x1, (space for row, col1,col2)
-            #     # coords = np.asarray(ml.coords)
-            #     x0, y_ = ml.coords[0]     # C-level direct index: one tuple, no loop
-            #     x1, _  = ml.coords[-1]
-            #     # y_ = coords[0][1]
-            #     # x0 = coords[0][0]
-            #     # x1 = coords[-1][0]
-            #     intersection_table.append((
-            #         f_index, y_, x0, x1
-            #     ))
-
         if not intersection_table:
             self.results = [self.stats.from_array(np.ma.array([], mask=True)) for _ in features.geometry]
             return
@@ -158,15 +106,8 @@ class Scanline(ZonalStatMethod):
         inter_ys = intersection_table[:, 1]
         f_index = intersection_table[:, 0]
 
-        rows, col0s = xy_to_rowcol(inter_x0s, inter_ys, left=True)
-        _, col1s = xy_to_rowcol(inter_x1s, inter_ys, left=False)
-        # f = transform.f
-        # py = -transform.e # assumes north is up
-        # rows = np.ceil((f - inter_ys) / py - 0.5).astype(int)
-        # col0s = np.ceil((inter_x0s - c) / a - 0.5).astype(int)
-        # col1s = np.floor((inter_x1s - c) / a - 0.5).astype(int)
-        # col0s = x_to_col_start(inter_x0s)
-        # col1s = x_to_col_end(inter_x1s)
+        rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
+        _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
 
         reading_table = np.stack([
             rows, col0s, col1s, f_index
@@ -235,8 +176,7 @@ class Scanline(ZonalStatMethod):
         # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
         # ref_mask = ref_mask_rasterstats(features, raster, window)
         # compare_stats(self.results,
-        #     self.raster_file_path.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
-
+        #     self.raster.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
         # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=inter_ys)
         # print('done')
         # end of debugging code

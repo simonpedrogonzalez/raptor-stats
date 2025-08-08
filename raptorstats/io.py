@@ -12,6 +12,34 @@ import geopandas as gpd
 from shapely.geometry.base import BaseGeometry
 from affine import Affine
 import json
+import geopandas as gpd
+import rasterio as rio
+from shapely.geometry import box
+import warnings
+
+def validate_raster_vector_compatibility(raster: rio.DatasetReader,  vector: gpd.GeoDataFrame):
+    raster_crs = raster.crs
+    raster_bounds = raster.bounds
+    vector_crs = vector.crs
+
+    if not str(raster_crs) == str(vector_crs):
+        warnings.warn(
+            "Raster and vector CRS do not match. This may lead to incorrect results.",
+            UserWarning
+        )
+
+def validate_is_north_up(transform):
+    not_north_up = (
+        not np.isclose(transform.b, 0) or
+        not np.isclose(transform.d, 0) or
+        transform.e > 0
+    )
+    if not_north_up:
+        warnings.warn(
+            "Raster transform is not north-up. This may lead to incorrect results.",
+            UserWarning
+        )
+
 
 @contextmanager
 def open_raster(source, *, affine=None, nodata=None, band=1, crs=None):

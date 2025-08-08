@@ -8,12 +8,12 @@ import pytest
 import rasterio
 import simplejson
 from affine import Affine
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 
 from raptorstats import zonal_stats
 import geopandas as gpd
 from raptorstats.stats import VALID_STATS
-from utils import compare_stats_exact_match
+from utils import compare_stats_exact_match, make_raster, get_reference_mean
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 

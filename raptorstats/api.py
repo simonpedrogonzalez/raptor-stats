@@ -1,6 +1,6 @@
 import geopandas as gpd
 import rasterio as rio
-from raptorstats.io import open_raster, open_vector
+from raptorstats.io import open_raster, open_vector, validate_raster_vector_compatibility, validate_is_north_up
 
 from raptorstats.scanline import Scanline
 from raptorstats.stats import Stats
@@ -50,6 +50,10 @@ def zonal_stats(
     with open_raster(raster, affine=affine, nodata=nodata, band=band) as ds:
 
         gdf = open_vector(vectors, layer=layer, affine=affine)
+
+        validate_is_north_up(ds.transform)
+        validate_raster_vector_compatibility(ds, gdf)
+
 
         # ---- 4. run Scanline ----
         sl = Scanline()

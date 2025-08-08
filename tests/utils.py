@@ -1,4 +1,5 @@
 import numpy as np
+import rasterio as rio
 
 def compare_histograms(hist1, hist2):
     # compare two histograms
@@ -50,3 +51,23 @@ def compare_stats_exact_match(reference, result):
                     "truth": b2,
                 }
     return True, {}
+
+
+def make_raster(data, transform, crs):
+    memfile = rio.MemoryFile()
+    with memfile.open(driver="GTiff",
+                        height=data.shape[0],
+                        width=data.shape[1],
+                        count=1,
+                        dtype=data.dtype,
+                        transform=transform,
+                        crs=crs) as ds:
+        ds.write(data, 1)
+    return memfile.open()
+
+def get_reference_mean(geom, raster):
+    # Burn polygon into raster and compute masked mean
+    mask = rio.features.rasterize([geom], out_shape=raster.shape, transform=raster.transform)
+    band = raster.read(1, masked=True)
+    return band[mask == 1].mean()
+
