@@ -1,6 +1,3 @@
-import geopandas as gpd
-import memory_profiler
-import rasterio as rio
 
 from raptorstats.io import (
     open_raster,
@@ -10,9 +7,9 @@ from raptorstats.io import (
 )
 from raptorstats.scanline import Scanline
 from raptorstats.stats import Stats
+from raptorstats.agqt import AggQuadTree
 
 
-# @memory_profiler.profile
 def zonal_stats(
     vectors,
     raster,
@@ -21,13 +18,13 @@ def zonal_stats(
     band=1,
     nodata=None,
     affine=None,
-    # geojson_out=False,
     prefix=None,
     categorical=False,
-    # **kwargs,
+    method="scanline",
+    **kwargs,
 ):
     """
-    Zonal statistics using the Scanline rasterisation method.
+    Zonal statistics using the AggQuadTree or Scanline methods.
 
     Parameters
     ----------
@@ -38,20 +35,25 @@ def zonal_stats(
     band    :  int                  raster band (1-based)
     nodata  :  float | None         overrides raster NODATA value
     affine  :  affine.Affine | None required if `raster` is a NumPy array (not used here)
-    geojson_out : bool              if True, return GeoJSON-like Features
     prefix  :  str | None           prefix every stat key (useful for merges)
+    categorical : bool              whether to compute categorical stats (histogram)
+    method  :  str                  zonal statistics method to use ('agqt' or 'scanline')
 
     Returns
     -------
     list[dict]                      one stats-dict (or Feature) per input geometry
     """
 
-    # ---- 1. prepare stats list (reuse rasterstats helper) ----
     stats_conf = Stats(stats, categorical=categorical)
 
-    # ---- 2. read vectors (GeoPandas) ----
+    if method == "agqt":
+        func = AggQuadTree(**kwargs)
+    elif method == "scanline":
+        func = Scanline(**kwargs)
+    else:
+        raise ValueError(f"Unknown method: {method}. Use 'agqt' or 'scanline'.")
 
-    # ---- 3. open raster once ----
+
     with open_raster(raster, affine=affine, nodata=nodata, band=band) as ds:
 
         gdf = open_vector(vectors, layer=layer, affine=affine)
@@ -59,27 +61,14 @@ def zonal_stats(
         validate_is_north_up(ds.transform)
         validate_raster_vector_compatibility(ds, gdf)
 
-        # ---- 4. run Scanline ----
-        sl = Scanline()
-        results = sl(ds, gdf, stats=stats_conf)  # Scanline.__call__ returns list[dict]
+        results = func(ds, gdf, stats=stats_conf)
 
         results = stats_conf.clean_results(results)
 
-        # ---- 5. attach / post-process ----
         if prefix:
             results = [
                 {f"{prefix}{k}": v for k, v in res.items()} if res is not None else None
                 for res in results
             ]
 
-        # if geojson_out:
-        #     features_out = []
-        #     for feat, res in zip(gdf.itertuples(index=False), results):
-        #         f = {
-        #             "type": "Feature",
-        #             "geometry": feat.geometry.__geo_interface__,
-        #             "properties": res or {},
-        #         }
-        #         features_out.append(f)
-        #     return features_out
         return results

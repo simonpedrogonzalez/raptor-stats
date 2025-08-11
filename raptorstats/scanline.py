@@ -12,6 +12,119 @@ from shapely import LineString, MultiLineString
 from raptorstats.zone_stat_method import ZonalStatMethod
 
 
+
+def xy_to_rowcol(xs, ys, transform):
+    cols, rows = (~transform) * (xs, ys)
+    return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(
+        int
+    ).clip(min=0)
+
+def rows_to_ys(rows, transform):
+    return (transform * (0, rows + 0.5))[1]
+
+def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetReader):
+    transform = raster.transform
+
+    window = rio.features.geometry_window(
+        raster,
+        features.geometry,
+        # transform=transform,
+        pad_x=0.5,
+        pad_y=0.5,
+    )
+
+    # Debugging code
+    # w_height = int(np.ceil(window.height))
+    # w_width = int(np.ceil(window.width))
+    # global_mask = np.zeros((w_height+1, w_width), dtype=int)
+    # End Debugging code
+
+    row_start, row_end = int(np.floor(window.row_off)), int(
+        np.ceil(window.row_off + window.height)
+    )
+    col_start, col_end = int(np.floor(window.col_off)), int(
+        np.ceil(window.col_off + window.width)
+    )
+
+    x0 = (raster.transform * (col_start - 1, 0))[0]
+    x1 = (raster.transform * (col_end, 0))[0]
+    all_rows = np.arange(row_start, row_end + 1)
+    ys = rows_to_ys(all_rows, raster.transform)
+
+    x0s = np.full_like(ys, x0, dtype=float)
+    x1s = np.full_like(ys, x1, dtype=float)
+
+    # all points defining the scanlines
+    all_points = np.stack(
+        [np.stack([x0s, ys], axis=1), np.stack([x1s, ys], axis=1)], axis=1
+    )
+
+    # for g in features.geometry:
+    #     shapely.prepare(g)
+    scanlines = MultiLineString(list(all_points))
+    # shapely.prepare(scanlines)
+
+    all_intersections = scanlines.intersection(features.geometry)
+
+    intersection_table = []
+    for f_index, inter in enumerate(all_intersections):
+        if inter.is_empty:
+            continue
+        if isinstance(inter, MultiLineString):
+            geoms = inter.geoms
+        elif isinstance(inter, LineString):
+            geoms = [inter]
+        else:
+            raise TypeError(f"Unexpected intersection type: {type(inter)}")
+
+        # g_arr = np.asarray(geoms, dtype=object)
+        g_arr = shapely.get_parts(geoms)
+        starts = shapely.get_point(g_arr, 0)
+        ends = shapely.get_point(g_arr, -1)
+        x0s = shapely.get_x(starts)
+        x1s = shapely.get_x(ends)
+        ys = shapely.get_y(starts)
+
+        # vertically stack the intersections
+        # creating a numpy array of shape (n, 4)
+        # with f_index, y, x0, x1
+        intersection_table.extend(
+            zip(np.full_like(ys, f_index, dtype=int), ys, x0s, x1s)
+        )
+
+    intersection_table = np.array(intersection_table)
+    return intersection_table, all_intersections
+
+def build_reading_table(intersection_table, raster: rio.DatasetReader, return_coordinates=False):
+    inter_x0s = intersection_table[:, 2]
+    inter_x1s = intersection_table[:, 3]
+    inter_ys = intersection_table[:, 1]
+    f_index = intersection_table[:, 0]
+
+    rows, col0s = xy_to_rowcol(inter_x0s, inter_ys, raster.transform)
+    _, col1s = xy_to_rowcol(inter_x1s, inter_ys, raster.transform)
+
+    reading_table = np.stack([rows, col0s, col1s, f_index], axis=1).astype(int)
+
+    reading_table = reading_table[
+        col0s < col1s
+    ]  # removes pixel reads where both intersections fall in between pixel centers
+
+    # sort by row
+    sort_idx = np.argsort(reading_table[:, 0])
+    # sort by row and f_index
+    # sort_idx = np.lexsort((reading_table[:, 0], reading_table[:, 3]))
+    
+    reading_table = reading_table[sort_idx]
+    
+    if return_coordinates:
+        coor = np.stack(
+            [inter_x0s, inter_ys, inter_x1s], axis=1
+        )[sort_idx]
+        return reading_table, coor
+
+    return reading_table
+
 class Scanline(ZonalStatMethod):
 
     __name__ = "Scanline"
@@ -21,109 +134,18 @@ class Scanline(ZonalStatMethod):
 
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         # NOTE: ASSUMES NORTH UP, NO SHEAR AFFINE. ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
+        
+        intersection_table, all_intersections = build_intersection_table(features, raster)
 
-        transform = raster.transform
-
-        def rows_to_ys(rows):
-            return (transform * (0, rows + 0.5))[1]
-
-        def xy_to_rowcol(xs, ys):
-            cols, rows = (~transform) * (xs, ys)
-            return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(
-                int
-            ).clip(min=0)
-
-        window = rio.features.geometry_window(
-            raster,
-            features.geometry,
-            # transform=transform,
-            pad_x=0.5,
-            pad_y=0.5,
-        )
-
-        # Debugging code
-        # w_height = int(np.ceil(window.height))
-        # w_width = int(np.ceil(window.width))
-        # global_mask = np.zeros((w_height+1, w_width), dtype=int)
-        # End Debugging code
-
-        row_start, row_end = int(np.floor(window.row_off)), int(
-            np.ceil(window.row_off + window.height)
-        )
-        col_start, col_end = int(np.floor(window.col_off)), int(
-            np.ceil(window.col_off + window.width)
-        )
-
-        x0 = (raster.transform * (col_start - 1, 0))[0]
-        x1 = (raster.transform * (col_end, 0))[0]
-        all_rows = np.arange(row_start, row_end + 1)
-        ys = rows_to_ys(all_rows)
-
-        x0s = np.full_like(ys, x0, dtype=float)
-        x1s = np.full_like(ys, x1, dtype=float)
-
-        # all points defining the scanlines
-        all_points = np.stack(
-            [np.stack([x0s, ys], axis=1), np.stack([x1s, ys], axis=1)], axis=1
-        )
-
-        # for g in features.geometry:
-        #     shapely.prepare(g)
-        scanlines = MultiLineString(list(all_points))
-        # shapely.prepare(scanlines)
-
-        all_intersections = scanlines.intersection(features.geometry)
-
-        intersection_table = []
-        for f_index, inter in enumerate(all_intersections):
-            if inter.is_empty:
-                continue
-            if isinstance(inter, MultiLineString):
-                geoms = inter.geoms
-            elif isinstance(inter, LineString):
-                geoms = [inter]
-            else:
-                raise TypeError(f"Unexpected intersection type: {type(inter)}")
-
-            # g_arr = np.asarray(geoms, dtype=object)
-            g_arr = shapely.get_parts(geoms)
-            starts = shapely.get_point(g_arr, 0)
-            ends = shapely.get_point(g_arr, -1)
-            x0s = shapely.get_x(starts)
-            x1s = shapely.get_x(ends)
-            ys = shapely.get_y(starts)
-
-            # vertically stack the intersections
-            # creating a numpy array of shape (n, 4)
-            # with f_index, y, x0, x1
-            intersection_table.extend(
-                zip(np.full_like(ys, f_index, dtype=int), ys, x0s, x1s)
-            )
-
-        if not intersection_table:
+        if not intersection_table.size:
             self.results = [
                 self.stats.from_array(np.ma.array([], mask=True))
                 for _ in features.geometry
             ]
             return
 
-        intersection_table = np.array(intersection_table)
-        inter_x0s = intersection_table[:, 2]
-        inter_x1s = intersection_table[:, 3]
-        inter_ys = intersection_table[:, 1]
-        f_index = intersection_table[:, 0]
+        reading_table = build_reading_table(intersection_table, raster)
 
-        rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
-        _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
-
-        reading_table = np.stack([rows, col0s, col1s, f_index], axis=1).astype(int)
-
-        reading_table = reading_table[
-            col0s < col1s
-        ]  # removes pixel reads where both intersections fall in between pixel centers
-
-        # sort by row
-        reading_table = reading_table[np.argsort(reading_table[:, 0])]
         rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
 
         pixel_values_per_feature = [[] for _ in range(len(all_intersections))]
