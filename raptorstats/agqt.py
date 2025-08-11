@@ -6,112 +6,138 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio as rio
-from node import Node
-from raster_methods import Masking
+from raptorstats.node import Node
+from raptorstats.raster_methods import Masking
+from raptorstats.scanline import Scanline
 from rtree import index
 from shapely import Geometry, MultiLineString, box
-from zone_stat_method import ZonalStatMethod
-
+from raptorstats.zone_stat_method import ZonalStatMethod
+from raptorstats.stats import Stats
+from raptorstats.scanline import build_intersection_table, build_reading_table
 
 class AggQuadTree(ZonalStatMethod):
 
     __name__ = "AggQuadTree"
 
-    def __init__(self, max_depth: int = 5):
+    def __init__(self, max_depth: int = 5, index_path: str = None, build_index: bool = False):
         self.max_depth = max_depth
+        if index_path is None:
+            index_path = f"index_{self.__name__}_depth_{max_depth}"
+        else:
+            # strip .{shit} if exists
+            index_path = index_path.split(".")[0]
+        self.index_path = index_path
+        self.build_index = build_index
         super().__init__()
 
-    def _get_params(self):
-        return {"max_depth": self.max_depth}
+    def _index_files_exist(self):
+        idx_file = f"{self.index_path}.idx"
+        dat_file = f"{self.index_path}.dat"
+        return os.path.exists(idx_file) and os.path.exists(dat_file)
 
-    def _get_index_path(self):
-        raster_file_name = self.raster_file_path.split("/")[-1]
-        raster_base_name = os.path.splitext(raster_file_name)[0]
-        max_depth = self.max_depth
-        index_path = os.path.join(
-            INDICES_PATH, f"index_{raster_base_name}_depth_{max_depth}"
-        )
-        return index_path
+    def _should_build_indices(self):
+        return self.build_index or not self._index_files_exist()
+
+    def _get_params(self):
+        return {"max_depth": self.max_depth, "index_path": self.index_path}
+
+    # def _get_index_path(self):
+        # raster_file_name = self.raster_file_path.split("/")[-1]
+        # raster_base_name = os.path.splitext(raster_file_name)[0]
+        # max_depth = self.max_depth
+    
+        # index_path = os.path.join(
+            # self.index_path, f"index_{raster_base_name}_depth_{max_depth}"
+        # )
+        # return index_path
 
     def _compute_scanline_reading_table(
         self, features: gpd.GeoDataFrame, raster: rio.DatasetReader
     ):
 
-        transform = raster.transform
+        # transform = raster.transform
 
-        def rows_to_ys(rows):
-            return (transform * (0, rows + 0.5))[1]
+        # def rows_to_ys(rows):
+        #     return (transform * (0, rows + 0.5))[1]
 
-        def rowcol_to_xy(rows, cols):
-            # coords of pixel centers
-            xs, ys = transform * (cols + 0.5, rows + 0.5)
-            return xs, ys
+        # def rowcol_to_xy(rows, cols):
+        #     # coords of pixel centers
+        #     xs, ys = transform * (cols + 0.5, rows + 0.5)
+        #     return xs, ys
 
-        def xy_to_rowcol(xs, ys):
-            # pixel in which the point is located
-            cols, rows = (~transform) * (xs, ys)
-            return np.floor(rows).astype(int), np.floor(cols).astype(int)
+        # def xy_to_rowcol(xs, ys):
+        #     # pixel in which the point is located
+        #     cols, rows = (~transform) * (xs, ys)
+        #     return np.floor(rows).astype(int), np.floor(cols).astype(int)
 
-        # get window for the entire features, that is, the bounding box for all features
-        window = rio.windows.from_bounds(*features.total_bounds, transform=transform)
+        # # get window for the entire features, that is, the bounding box for all features
+        # window = rio.windows.from_bounds(*features.total_bounds, transform=transform)
 
-        row_start, row_end = int(np.floor(window.row_off)), int(
-            np.ceil(window.row_off + window.height)
-        )
-        col_start, col_end = int(np.floor(window.col_off)), int(
-            np.ceil(window.col_off + window.width)
-        )
+        # row_start, row_end = int(np.floor(window.row_off)), int(
+        #     np.ceil(window.row_off + window.height)
+        # )
+        # col_start, col_end = int(np.floor(window.col_off)), int(
+        #     np.ceil(window.col_off + window.width)
+        # )
 
-        x0 = (raster.transform * (col_start - 1, 0))[0]
-        x1 = (raster.transform * (col_end, 0))[0]
-        all_rows = np.arange(row_start, row_end + 1)
-        ys = rows_to_ys(all_rows)
+        # x0 = (raster.transform * (col_start - 1, 0))[0]
+        # x1 = (raster.transform * (col_end, 0))[0]
+        # all_rows = np.arange(row_start, row_end + 1)
+        # ys = rows_to_ys(all_rows)
 
-        x0s = np.full_like(ys, x0, dtype=float)
-        x1s = np.full_like(ys, x1, dtype=float)
+        # x0s = np.full_like(ys, x0, dtype=float)
+        # x1s = np.full_like(ys, x1, dtype=float)
 
-        # all points defining the scanlines
-        all_points = np.stack(
-            [np.stack([x0s, ys], axis=1), np.stack([x1s, ys], axis=1)], axis=1
-        )
+        # # all points defining the scanlines
+        # all_points = np.stack(
+        #     [np.stack([x0s, ys], axis=1), np.stack([x1s, ys], axis=1)], axis=1
+        # )
 
-        scanlines = MultiLineString(list(all_points))
-        all_intersections = scanlines.intersection(features.geometry)
+        # scanlines = MultiLineString(list(all_points))
+        # all_intersections = scanlines.intersection(features.geometry)
 
-        intersection_table = []
-        for f_index, inter in enumerate(all_intersections):
-            for ml in inter.geoms:
-                # f_index, y, x0, x1, (space for row, col1,col2)
-                coords = np.asarray(ml.coords)
-                y_ = coords[0][1]
-                x0 = coords[0][0]
-                x1 = coords[-1][0]
-                intersection_table.append((f_index, y_, x0, x1))
+        # intersection_table = []
+        # for f_index, inter in enumerate(all_intersections):
+        #     for ml in inter.geoms:
+        #         # f_index, y, x0, x1, (space for row, col1,col2)
+        #         coords = np.asarray(ml.coords)
+        #         y_ = coords[0][1]
+        #         x0 = coords[0][0]
+        #         x1 = coords[-1][0]
+        #         intersection_table.append((f_index, y_, x0, x1))
 
-        intersection_table = np.array(intersection_table)
-        inter_x0s = intersection_table[:, 2]
-        inter_x1s = intersection_table[:, 3]
-        inter_ys = intersection_table[:, 1]
-        f_index = intersection_table[:, 0]
+        # intersection_table = np.array(intersection_table)
+        # inter_x0s = intersection_table[:, 2]
+        # inter_x1s = intersection_table[:, 3]
+        # inter_ys = intersection_table[:, 1]
+        # f_index = intersection_table[:, 0]
 
-        rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
-        _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
-        reading_table = np.stack(
-            [inter_ys, inter_x0s, inter_x1s, rows, col0s, col1s, f_index], axis=1
-        ).astype(int)
+        # rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
+        # _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
+        # reading_table = np.stack(
+        #     [inter_ys, inter_x0s, inter_x1s, rows, col0s, col1s, f_index], axis=1
+        # ).astype(int)
 
-        sort_idx = np.lexsort((rows, f_index))
-        reading_table = reading_table[sort_idx]
-        unique_f_indices, f_index_starts = np.unique(
-            reading_table[:, 6], return_index=True
-        )
+        # sort_idx = np.lexsort((rows, f_index))
+        # reading_table = reading_table[sort_idx]
+        # unique_f_indices, f_index_starts = np.unique(
+        #     reading_table[:, 6], return_index=True
+        # )
+        intersection_table, _ = build_intersection_table(features, raster)
+        
+        if intersection_table.size == 0:
+            reading_table = np.empty((0, 7), dtype=int)
+            coord_table = np.empty((0, 3), dtype=float)
+            f_index_starts = np.array([], dtype=int)
+            unique_f_indices = np.array([], dtype=int)
+            return
 
         self._reading_table = reading_table
         self.f_index_starts = f_index_starts
         self.unique_f_indices = unique_f_indices
         self.n_features = len(unique_f_indices)
 
-    @line_profiler.profile
+    # @line_profiler.profile
     def _compute_quad_tree(self, feature: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         def part1by1(n):
@@ -149,7 +175,7 @@ class AggQuadTree(ZonalStatMethod):
 
         n_total_boxes = sum([4**i for i in range(self.max_depth + 1)])
         box_index = 0
-        idx = index.Index(self._get_index_path())
+        idx = index.Index(self.index_path)
 
         all_nodes = []
 
@@ -172,7 +198,7 @@ class AggQuadTree(ZonalStatMethod):
             if level == 0:
                 parent_ids = np.array([-1])
             else:
-                parent_div = 2 ** (level - 1)
+                # parent_div = 2 ** (level - 1)
                 parent_ids = (z_indices // 4) + box_index
 
             if level == self.max_depth:
@@ -192,8 +218,9 @@ class AggQuadTree(ZonalStatMethod):
                 data = data[0]
                 data = data[~data.mask]
 
-                masking_method = Masking()
-                aggregates = masking_method(raster, vector_layer, self.stats)
+                # TODO: test if masking would be faster
+                sc = Scanline()
+                aggregates = sc(raster, vector_layer, self.stats)
                 aggregates = np.array(aggregates)
                 # print(f"Aggregates count: {aggregates[0]['count']}")
             else:
@@ -206,7 +233,7 @@ class AggQuadTree(ZonalStatMethod):
                 for p_id in unique_previous_parents:
                     mask = previous_parent_ids == p_id
                     child_aggregates = previous_aggregates[mask]
-                    combined = self._combine_stats(child_aggregates)
+                    combined = self.stats.from_partials(child_aggregates)
                     aggregates.append(combined)
                 aggregates = np.array(aggregates)
 
@@ -233,22 +260,21 @@ class AggQuadTree(ZonalStatMethod):
         self.idx = idx
 
     def _load_quad_tree(self):
-        idx_path = self._get_index_path()
-        idx_file = idx_path + ".idx"
-        dat_file = idx_path + ".dat"
-        if os.path.exists(idx_file) and os.path.exists(dat_file):
-            self.idx = index.Index(idx_path)
-            return True
-        else:
-            return False
+        try:
+            self.idx = index.Index(self.index_path)
+        except Exception as e:
+            print(f"Error loading index: {e}")
+            raise e
 
-    @line_profiler.profile
+    # @line_profiler.profile
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
-        if not self._load_quad_tree():
+        if self._should_build_indices():
             self._compute_quad_tree(features, raster)
+        else:
+            self._load_quad_tree()
         self._compute_scanline_reading_table(features, raster)
 
-    @line_profiler.profile
+    # @line_profiler.profile
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         self._precomputations(features, raster)
 
@@ -441,10 +467,10 @@ class AggQuadTree(ZonalStatMethod):
         for i in range(len(pixel_values_per_feature)):
             feature_data = np.concatenate(pixel_values_per_feature[i])
             # get the stats
-            r = self._compute_stats_from_array(feature_data)
+            r = self.stats.from_array(feature_data)
             tree_r = partials[i]
             tree_r.append(r)
-            r = self._combine_stats(tree_r)
+            r = self.stats.from_partials(tree_r)
             results_per_feature.append(r)
 
         self.results = results_per_feature
@@ -452,92 +478,92 @@ class AggQuadTree(ZonalStatMethod):
         return self.results
 
 
-def test_plot(boxes, aggregates, parent_ids, ids):
+# def test_plot(boxes, aggregates, parent_ids, ids):
 
-    nx, ny = 8, 8
-    # normalize boxes to fit in the figure
-    x_min = min(boxes[:, [0, 2]].flatten())
-    x_max = max(boxes[:, [0, 2]].flatten())
-    y_min = min(boxes[:, [1, 3]].flatten())
-    y_max = max(boxes[:, [1, 3]].flatten())
+#     nx, ny = 8, 8
+#     # normalize boxes to fit in the figure
+#     x_min = min(boxes[:, [0, 2]].flatten())
+#     x_max = max(boxes[:, [0, 2]].flatten())
+#     y_min = min(boxes[:, [1, 3]].flatten())
+#     y_max = max(boxes[:, [1, 3]].flatten())
 
-    boxes[:, [0, 2]] = (boxes[:, [0, 2]] - x_min) / (x_max - x_min) * nx
-    boxes[:, [1, 3]] = (boxes[:, [1, 3]] - y_min) / (y_max - y_min) * ny
+#     boxes[:, [0, 2]] = (boxes[:, [0, 2]] - x_min) / (x_max - x_min) * nx
+#     boxes[:, [1, 3]] = (boxes[:, [1, 3]] - y_min) / (y_max - y_min) * ny
 
-    fig, ax = plt.subplots(figsize=(nx, ny))
+#     fig, ax = plt.subplots(figsize=(nx, ny))
 
-    for i, (x0, y0, x1, y1) in enumerate(boxes):
-        rect = patches.Rectangle(
-            (x0, y0), x1 - x0, y1 - y0, linewidth=1, edgecolor="black", facecolor="none"
-        )
-        ax.add_patch(rect)
+#     for i, (x0, y0, x1, y1) in enumerate(boxes):
+#         rect = patches.Rectangle(
+#             (x0, y0), x1 - x0, y1 - y0, linewidth=1, edgecolor="black", facecolor="none"
+#         )
+#         ax.add_patch(rect)
 
-        # Label the box with its index at the center
-        cx = (x0 + x1) / 2
-        cy = (y0 + y1) / 2
-        tt = aggregates[i]["count"]
-        pp = parent_ids[i]
+#         # Label the box with its index at the center
+#         cx = (x0 + x1) / 2
+#         cy = (y0 + y1) / 2
+#         tt = aggregates[i]["count"]
+#         pp = parent_ids[i]
 
-        color = "black"
-        if int(pp) in [1330, 1220, 1221, 1224]:
-            color = "red"
+#         color = "black"
+#         if int(pp) in [1330, 1220, 1221, 1224]:
+#             color = "red"
 
-        ii = ids[i]
-        ttt = str(ii) + " p:" + str(pp)
-        ax.text(cx, cy, ttt, fontsize=8, ha="center", va="center", color=color)
+#         ii = ids[i]
+#         ttt = str(ii) + " p:" + str(pp)
+#         ax.text(cx, cy, ttt, fontsize=8, ha="center", va="center", color=color)
 
-    ax.set_xlim(min(boxes[:, 0]), max(boxes[:, 2]))
-    ax.set_ylim(min(boxes[:, 1]), max(boxes[:, 3]))
-    ax.set_aspect("equal")
-    ax.invert_yaxis()  # Optional: to mimic raster image top-down layout
-    plt.grid(True)
-    plt.show()
-    plt.savefig("test_plot.png")
+#     ax.set_xlim(min(boxes[:, 0]), max(boxes[:, 2]))
+#     ax.set_ylim(min(boxes[:, 1]), max(boxes[:, 3]))
+#     ax.set_aspect("equal")
+#     ax.invert_yaxis()  # Optional: to mimic raster image top-down layout
+#     plt.grid(True)
+#     plt.show()
+#     plt.savefig("test_plot.png")
 
 
-def plot_masks(raster, geom, my_mask, window):
+# def plot_masks(raster, geom, my_mask, window):
 
-    correct_mask = Masking().mask(geom, raster, window)
-    # plot 3 things:
-    # my_mask
-    # correct_mask
-    # difference between the two masks
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-    ax[0].imshow(my_mask, cmap="gray")
-    ax[0].set_title("My Mask")
-    ax[1].imshow(correct_mask, cmap="gray")
-    ax[1].set_title("Correct Mask")
-    ax[2].imshow(my_mask.astype(int) - correct_mask.astype(int), cmap="gray")
-    ax[2].set_title("Difference")
-    plt.show()
-    print("stop")
-    # add colorbar to the first two plots
+#     correct_mask = Masking().mask(geom, raster, window)
+#     # plot 3 things:
+#     # my_mask
+#     # correct_mask
+#     # difference between the two masks
+#     fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+#     ax[0].imshow(my_mask, cmap="gray")
+#     ax[0].set_title("My Mask")
+#     ax[1].imshow(correct_mask, cmap="gray")
+#     ax[1].set_title("Correct Mask")
+#     ax[2].imshow(my_mask.astype(int) - correct_mask.astype(int), cmap="gray")
+#     ax[2].set_title("Difference")
+#     plt.show()
+#     print("stop")
+#     # add colorbar to the first two plots
 
     # plot difference between the two masks
     # mask - correct_mask
     # print('done')
 
 
-def test_raster():
+# def test_raster():
 
-    # 10x10 raster with all 1s
-    array = np.ones((8, 8), dtype=np.uint8)
-    transform = rio.transform.from_origin(0, 8, 1, 1)  # (x_min, y_max, x_res, y_res)
-    from constants import RASTER_DATA_PATH
+#     # 10x10 raster with all 1s
+#     array = np.ones((8, 8), dtype=np.uint8)
+#     transform = rio.transform.from_origin(0, 8, 1, 1)  # (x_min, y_max, x_res, y_res)
+#     from constants import RASTER_DATA_PATH
 
-    # Create the GeoTIFF file
-    with rio.open(
-        f"{RASTER_DATA_PATH}/test.tif",
-        "w",
-        driver="GTiff",
-        height=array.shape[0],
-        width=array.shape[1],
-        count=1,
-        dtype=array.dtype,
-        crs="EPSG:4326",  # WGS84
-        transform=transform,
-    ) as dst:
-        dst.write(array, 1)
+#     # Create the GeoTIFF file
+#     with rio.open(
+#         f"{RASTER_DATA_PATH}/test.tif",
+#         "w",
+#         driver="GTiff",
+#         height=array.shape[0],
+#         width=array.shape[1],
+#         count=1,
+#         dtype=array.dtype,
+#         crs="EPSG:4326",  # WGS84
+#         transform=transform,
+#     ) as dst:
+#         dst.write(array, 1)
 
 
 # def test():
@@ -553,31 +579,31 @@ def test_raster():
 #     ag(raster_layer_file, vector_layer_file, ['count', 'mean'])
 
 
-def test():
-    from constants import RASTER_DATA_PATH, VECTOR_DATA_PATH
-    from reference import reference_method
+# def test():
+#     from constants import RASTER_DATA_PATH, VECTOR_DATA_PATH
+#     from reference import reference_method
 
-    ag = AggQuadTree(max_depth=7)
-    vector_layer_file = f"{VECTOR_DATA_PATH}/cb_2018_us_state_20m_filtered.shp"
-    raster_layer_file = f"{RASTER_DATA_PATH}/US_MSR_resampled_x4.tif"
+#     ag = AggQuadTree(max_depth=7)
+#     vector_layer_file = f"{VECTOR_DATA_PATH}/cb_2018_us_state_20m_filtered.shp"
+#     raster_layer_file = f"{RASTER_DATA_PATH}/US_MSR_resampled_x4.tif"
 
-    # test_raster()
-    # raster_layer_file = f'{RASTER_DATA_PATH}/test.tif'
-    r1 = ag(raster_layer_file, vector_layer_file, ["count"])
+#     # test_raster()
+#     # raster_layer_file = f'{RASTER_DATA_PATH}/test.tif'
+#     r1 = ag(raster_layer_file, vector_layer_file, ["count"])
 
-    rlow, rhigh = reference_method(raster_layer_file, vector_layer_file, ["count"])
+#     rlow, rhigh = reference_method(raster_layer_file, vector_layer_file, ["count"])
 
-    for i in range(len(r1)):
-        r_c = r1[i]["count"]
-        r_l = rlow[i]["count"]
-        r_h = rhigh[i]["count"]
-        err1 = abs(r_c - r_l) / r_l
-        err2 = abs(r_c - r_h) / r_h
-        print(f"Error {i}: {err1:.2%}")
-        if err1 > 0.03:
-            print(f"r_c: {r_c}, r_l: {r_l}, r_h: {r_h}")
+#     for i in range(len(r1)):
+#         r_c = r1[i]["count"]
+#         r_l = rlow[i]["count"]
+#         r_h = rhigh[i]["count"]
+#         err1 = abs(r_c - r_l) / r_l
+#         err2 = abs(r_c - r_h) / r_h
+#         print(f"Error {i}: {err1:.2%}")
+#         if err1 > 0.03:
+#             print(f"r_c: {r_c}, r_l: {r_l}, r_h: {r_h}")
 
-    print("done")
+#     print("done")
 
 
 # test()
