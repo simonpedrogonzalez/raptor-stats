@@ -10,7 +10,7 @@ import shapely
 from shapely import LineString, MultiLineString
 
 from raptorstats.zone_stat_method import ZonalStatMethod
-
+from raptorstats.stats import Stats
 
 
 def xy_to_rowcol(xs, ys, transform):
@@ -164,6 +164,77 @@ def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader,
 
     return reading_table[sort_idx]
 
+def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats):
+    """ Read the pixels indicated by the reading table and compute statistics
+
+    Parameters
+    ----------
+    reading_table : np.ndarray
+        A 2D array containing the reading table information
+    features : gpd.GeoDataFrame
+        A GeoDataFrame containing the features
+    raster : rio.DatasetReader
+        A rasterio dataset reader object
+    stats : Stats
+        A Stats object for computing statistics
+
+    Returns
+    -------
+    List[Dict]
+        A list of statistics for each feature
+    """
+    rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
+
+    pixel_values_per_feature = [[] for _ in range(len(features.geometry))]
+
+    for i, row in enumerate(rows):
+        start = row_starts[i]
+        end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
+        reading_line = reading_table[start:end]
+
+        min_col = np.min(reading_line[:, 1])
+        max_col = np.max(reading_line[:, 2])
+        reading_window = rio.windows.Window(
+            col_off=min_col, row_off=row, width=max_col - min_col, height=1
+        )
+
+        # Does not handle nodata
+        data = raster.read(1, window=reading_window, masked=True)
+        if data.shape[0] == 0:
+            continue
+        data = data[0]
+
+        for j, col0, col1, f_index in reading_line:
+
+            c0 = col0 - min_col
+            c1 = col1 - min_col
+            pixel_values = data[c0:c1]
+
+            # Debugging code
+            # mark the pixels in the global mask
+            # row_in_mask = row - row_start
+            # col0_in_mask = col0 - col_start
+            # col1_in_mask = col1 - col_start
+            # global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+            # End Debugging code
+
+            if len(pixel_values) > 0:
+                pixel_values_per_feature[f_index].append(pixel_values)
+
+    # combine the results
+    results_per_feature = []
+    for i in range(len(pixel_values_per_feature)):
+        if not pixel_values_per_feature[i]:
+            feature_data = np.ma.array([], mask=True)
+        else:
+            feature_data = np.ma.concatenate(pixel_values_per_feature[i])
+        # get the stats
+        r = stats.from_array(feature_data)
+        results_per_feature.append(r)
+
+    return results_per_feature
+
+
 class Scanline(ZonalStatMethod):
 
     __name__ = "Scanline"
@@ -185,57 +256,7 @@ class Scanline(ZonalStatMethod):
 
         reading_table = build_reading_table(f_index, intersection_coords, raster, return_coordinates=False, sort_by_feature=False)
 
-        rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
-
-        pixel_values_per_feature = [[] for _ in range(len(features.geometry))]
-
-        for i, row in enumerate(rows):
-            start = row_starts[i]
-            end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
-            reading_line = reading_table[start:end]
-
-            min_col = np.min(reading_line[:, 1])
-            max_col = np.max(reading_line[:, 2])
-            reading_window = rio.windows.Window(
-                col_off=min_col, row_off=row, width=max_col - min_col, height=1
-            )
-
-            # Does not handle nodata
-            data = raster.read(1, window=reading_window, masked=True)
-            if data.shape[0] == 0:
-                continue
-            data = data[0]
-
-            for j, col0, col1, f_index in reading_line:
-
-                c0 = col0 - min_col
-                c1 = col1 - min_col
-                pixel_values = data[c0:c1]
-
-                # Debugging code
-                # mark the pixels in the global mask
-                # row_in_mask = row - row_start
-                # col0_in_mask = col0 - col_start
-                # col1_in_mask = col1 - col_start
-                # global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
-                # End Debugging code
-
-                if len(pixel_values) > 0:
-                    pixel_values_per_feature[f_index].append(pixel_values)
-
-        # combine the results
-        results_per_feature = []
-        for i in range(len(pixel_values_per_feature)):
-            if not pixel_values_per_feature[i]:
-                feature_data = np.ma.array([], mask=True)
-            else:
-                feature_data = np.ma.concatenate(pixel_values_per_feature[i])
-            # get the stats
-            r = self.stats.from_array(feature_data)
-            results_per_feature.append(r)
-
-        self.results = results_per_feature
-
+        self.results = process_reading_table(reading_table, features, raster, self.stats)
         # Debugging code
         # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
         # ref_mask = ref_mask_rasterstats(features, raster, window)
