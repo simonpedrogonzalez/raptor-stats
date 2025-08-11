@@ -1,6 +1,13 @@
 import numpy as np
 import rasterio as rio
+import hashlib
 
+def compute_file_hash(file_path):
+    h = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for block in iter(lambda: f.read(4096), b''):
+            h.update(block)
+    return h.hexdigest()
 
 def compare_histograms(hist1, hist2):
     # compare two histograms
