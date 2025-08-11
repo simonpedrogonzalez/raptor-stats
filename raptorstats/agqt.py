@@ -13,7 +13,8 @@ from rtree import index
 from shapely import Geometry, MultiLineString, box
 from raptorstats.zone_stat_method import ZonalStatMethod
 from raptorstats.stats import Stats
-from raptorstats.scanline import build_intersection_table, build_reading_table
+from raptorstats.scanline import build_intersection_table, build_reading_table, process_reading_table
+import warnings
 
 class AggQuadTree(ZonalStatMethod):
 
@@ -123,16 +124,22 @@ class AggQuadTree(ZonalStatMethod):
         # unique_f_indices, f_index_starts = np.unique(
         #     reading_table[:, 6], return_index=True
         # )
-        intersection_table, _ = build_intersection_table(features, raster)
-        
-        if intersection_table.size == 0:
+        f_index, intersection_coords = build_intersection_table(features, raster)
+
+        if intersection_coords.size == 0:
             reading_table = np.empty((0, 7), dtype=int)
             coord_table = np.empty((0, 3), dtype=float)
             f_index_starts = np.array([], dtype=int)
             unique_f_indices = np.array([], dtype=int)
             return
 
-        self._reading_table = reading_table
+        reading_table, coord_table = build_reading_table(
+            f_index, intersection_coords, raster, return_coordinates=True, sort_by_feature=True
+        )
+
+        self._reading_table = reading_table # row, col0, col1, f_index
+        self._coord_table = coord_table # y, x0, x1
+        unique_f_indices, f_index_starts = np.unique(reading_table[:, 3], return_index=True)
         self.f_index_starts = f_index_starts
         self.unique_f_indices = unique_f_indices
         self.n_features = len(unique_f_indices)
@@ -172,6 +179,15 @@ class AggQuadTree(ZonalStatMethod):
         x_min, y_min, x_max, y_max = raster.bounds
         width = x_max - x_min
         height = y_max - y_min
+
+        n_pixels_width = raster.width
+        n_pixels_height = raster.height
+        min_size = min(n_pixels_width, n_pixels_height)
+        if min_size / (2**self.max_depth) < 1:
+            raise ValueError(
+                f"Max depth {self.max_depth} is too high for raster size {n_pixels_width}x{n_pixels_height}. "
+                "Reduce max_depth or increase raster size."
+            )
 
         n_total_boxes = sum([4**i for i in range(self.max_depth + 1)])
         box_index = 0
@@ -266,9 +282,22 @@ class AggQuadTree(ZonalStatMethod):
             print(f"Error loading index: {e}")
             raise e
 
+    def _delete_index_files(self):
+        idx_file = f"{self.index_path}.idx"
+        dat_file = f"{self.index_path}.dat"
+        if os.path.exists(idx_file):
+            os.remove(idx_file)
+        if os.path.exists(dat_file):
+            os.remove(dat_file)
+
     # @line_profiler.profile
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         if self._should_build_indices():
+            if self._index_files_exist():
+                warnings.warn(
+                    f"Index files {self.index_path}.idx and {self.index_path}.dat already exist. They will be overwritten.",
+                )
+                self._delete_index_files()
             self._compute_quad_tree(features, raster)
         else:
             self._load_quad_tree()
@@ -279,8 +308,8 @@ class AggQuadTree(ZonalStatMethod):
         self._precomputations(features, raster)
 
         reading_table = self._reading_table
+        coord_table = self._coord_table
         f_index_starts = self.f_index_starts
-        unique_f_indices = self.unique_f_indices
         n_features = self.n_features
         transform = raster.transform
 
@@ -290,6 +319,7 @@ class AggQuadTree(ZonalStatMethod):
             return np.floor(rows).astype(int), np.floor(cols).astype(int)
 
         new_reading_table = []
+        new_coord_table = []
         partials = [[] for _ in range(n_features)]
 
         for f_index, geom in enumerate(features.geometry):
@@ -299,7 +329,7 @@ class AggQuadTree(ZonalStatMethod):
             window_bounds = geom.bounds
             # window_bounds = rio.windows.bounds(window, raster.transform)
             nodes = list(self.idx.intersection(window_bounds, objects=True))[::-1]
-            nodes = [node.object for node in nodes]
+            nodes = [node.object for node in nodes] # TODO: one liner
             nodes = [node for node in nodes if node.is_contained_in_geom(geom)]
             nodes = sorted(nodes, key=lambda x: x.level)
             without_children = []
@@ -318,9 +348,11 @@ class AggQuadTree(ZonalStatMethod):
                 else len(reading_table)
             )
             f_reading_table = reading_table[f_index_start:f_index_end]
+            f_coord_table = coord_table[f_index_start:f_index_end]
 
             if len(nodes) == 0:
                 new_reading_table.append(f_reading_table)
+                new_coord_table.append(f_coord_table)
                 continue
 
             # if f_index == 25:
@@ -331,8 +363,6 @@ class AggQuadTree(ZonalStatMethod):
             #     piids = [n.parent_id for n in nnodes]
             #     # test_plot(bbx, aags, piids, iids)
             #     print(f"Feature index: {f_index}")
-
-            to_read = []
 
             for node in nodes:
 
@@ -348,22 +378,23 @@ class AggQuadTree(ZonalStatMethod):
 
                 partials[f_index].append(node.stats)
 
-                ys = f_reading_table[:, 0]
-                x0s = f_reading_table[:, 1]
-                x1s = f_reading_table[:, 2]
+                ys = f_coord_table[:, 0]
+                x0s = f_coord_table[:, 1]
+                x1s = f_coord_table[:, 2]
 
                 inside_y = (ys >= n_y0) & (ys <= n_y1)
                 inside_x = (x0s >= n_x0) & (x1s <= n_x1)
                 fully_inside = inside_y & inside_x
 
                 f_reading_table = f_reading_table[~fully_inside]
-                ys = f_reading_table[:, 0]
-                x0s = f_reading_table[:, 1]
-                x1s = f_reading_table[:, 2]
-                rows = f_reading_table[:, 3]
-                col0s = f_reading_table[:, 4]
-                col1s = f_reading_table[:, 5]
-                f_idxs = f_reading_table[:, 6]
+                f_coord_table = f_coord_table[~fully_inside]
+
+                ys = f_coord_table[:, 0]
+                x0s = f_coord_table[:, 1]
+                x1s = f_coord_table[:, 2]
+                rows = f_reading_table[:, 0]
+                
+                f_idxs = f_reading_table[:, 3]
                 # y, x0, x1, rows, col0s, col1s, f_index
 
                 inside_y = (ys >= n_y0) & (ys <= n_y1)
@@ -381,7 +412,7 @@ class AggQuadTree(ZonalStatMethod):
                 if n_cut_left > 0:
                     new_entry_left = np.stack(
                         [
-                            ys[cut_left],
+                            ys[cut_left], # y
                             x0s[cut_left],  # new x0 is the left border
                             np.ones(n_cut_left) * n_x0,
                             rows[cut_left],
@@ -414,67 +445,57 @@ class AggQuadTree(ZonalStatMethod):
 
                 completely_outside = ~inside_y | ~horizontally_intersect
                 outside_rows = f_reading_table[completely_outside]
+                outside_coords = f_coord_table[completely_outside]
 
                 if new_entries:
+                    
                     new_entries = np.vstack(new_entries)
                     new_entries_ys = new_entries[:, 0]
                     new_entries_x0s = new_entries[:, 1]
                     new_entries_x1s = new_entries[:, 2]
+                    new_entries_f_index = new_entries[:, 6]
+                    new_entries_rows = new_entries[:, 3]
+
+                    new_coord_entries = np.stack([
+                        new_entries_ys,
+                        new_entries_x0s,
+                        new_entries_x1s,
+                    ], axis=1)
+                    
                     _, new_entries_col0s = xy_to_rowcol(new_entries_x0s, new_entries_ys)
                     _, new_entries_col1s = xy_to_rowcol(new_entries_x1s, new_entries_ys)
-                    new_entries[:, 4] = new_entries_col0s
-                    new_entries[:, 5] = new_entries_col1s
-                    f_reading_table = np.vstack([outside_rows, new_entries])
+                    
+                    new_reading_table_entries = np.stack([
+                            new_entries_rows,
+                            new_entries_col0s,
+                            new_entries_col1s,
+                            new_entries_f_index,
+                        ], axis=1).astype(int)
+                    
+                    f_reading_table = np.vstack([outside_rows, new_reading_table_entries])
+                    f_coord_table = np.vstack([outside_coords, new_coord_entries])
+
                 else:
                     f_reading_table = outside_rows
+                    f_coord_table = outside_coords
 
                 # if f_index == 25:
                 #     print(25)
 
             new_reading_table.append(f_reading_table)
+            new_coord_table.append(f_coord_table)
 
         new_reading_table = np.vstack(new_reading_table)
+        new_coord_table = np.vstack(new_coord_table)
         # sort new reading table by rows
-        sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 6]))
+        # sort_idx = np.lexsort((new_reading_table[:, 0], new_reading_table[:, 3]))
+        sort_idx = np.argsort(new_reading_table[:, 0])
         reading_table = new_reading_table[sort_idx]
-        reading_table = reading_table[:, 3:].astype(int)
-        rows, row_starts = np.unique(reading_table[:, 3], return_index=True)
-
-        pixel_values_per_feature = [[] for _ in range(n_features)]
-
-        for i, row in enumerate(rows):
-            start = row_starts[i]
-            end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
-            reading_line = reading_table[start:end]
-
-            min_col = np.min(reading_line[:, 1])
-            max_col = np.max(reading_line[:, 2])
-            reading_window = rio.windows.Window(
-                col_off=min_col, row_off=row, width=max_col - min_col, height=1
-            )
-            # Does not handle nodata
-            data = raster.read(1, window=reading_window, masked=False)[0]
-            for j, col0, col1, f_index in reading_line:
-                c0 = col0 - min_col
-                c1 = col1 - min_col
-                pixel_values = data[c0:c1]
-
-                if len(pixel_values) > 0:
-                    pixel_values_per_feature[f_index].append(pixel_values)
-
-        # combine the results
-        results_per_feature = []
-        for i in range(len(pixel_values_per_feature)):
-            feature_data = np.concatenate(pixel_values_per_feature[i])
-            # get the stats
-            r = self.stats.from_array(feature_data)
-            tree_r = partials[i]
-            tree_r.append(r)
-            r = self.stats.from_partials(tree_r)
-            results_per_feature.append(r)
-
-        self.results = results_per_feature
-
+        coord_table = new_coord_table[sort_idx]
+        
+        self.results = process_reading_table(
+            reading_table, features, raster, self.stats, partials=partials
+        )
         return self.results
 
 
