@@ -164,7 +164,7 @@ def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader,
 
     return reading_table[sort_idx]
 
-def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats):
+def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats, partials=None):
     """ Read the pixels indicated by the reading table and compute statistics
 
     Parameters
@@ -177,6 +177,8 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
         A rasterio dataset reader object
     stats : Stats
         A Stats object for computing statistics
+    partials : list, optional
+        A list of partial per-feature statistics to combine with the computed statistics, by default None
 
     Returns
     -------
@@ -230,6 +232,8 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
             feature_data = np.ma.concatenate(pixel_values_per_feature[i])
         # get the stats
         r = stats.from_array(feature_data)
+        if partials is not None:
+            r = stats.from_partials([r, *partials[i]])
         results_per_feature.append(r)
 
     return results_per_feature
