@@ -23,7 +23,23 @@ def rows_to_ys(rows, transform):
     return (transform * (0, rows + 0.5))[1]
 
 def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetReader):
-    transform = raster.transform
+    """Intersect features with scanlines and return the intersection table
+
+    Parameters
+    ----------
+    features : gpd.GeoDataFrame
+    raster : rio.DatasetReader
+
+    Returns
+    -------
+    (np.ndarray(int), np.ndarray(float))
+        f_index, (y, x0, x1) coordinates
+
+    Raises
+    ------
+    TypeError
+        If the intersection type is not LineString or MultiLineString
+    """
 
     window = rio.features.geometry_window(
         raster,
@@ -92,14 +108,36 @@ def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetRead
             zip(np.full_like(ys, f_index, dtype=int), ys, x0s, x1s)
         )
 
+    if not intersection_table:
+        return np.array([], dtype=int), np.array([], dtype=float)
+    
     intersection_table = np.array(intersection_table)
-    return intersection_table, all_intersections
+    f_index = intersection_table[:, 0].astype(int)
+    coords = intersection_table[:, 1:4]
+    return f_index, coords
 
-def build_reading_table(intersection_table, raster: rio.DatasetReader, return_coordinates=False):
-    inter_x0s = intersection_table[:, 2]
-    inter_x1s = intersection_table[:, 3]
-    inter_ys = intersection_table[:, 1]
-    f_index = intersection_table[:, 0]
+def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader, return_coordinates=False, sort_by_feature=False):
+    """Create a reading table indicating which pixels to read for each feature
+
+    Parameters
+    ----------
+    intersection_table : np.ndarray
+        A 2D array containing feature index, y coordinate, x0 coordinate, and x1 coordinate
+    raster : rio.DatasetReader
+        A rasterio dataset reader object
+    return_coordinates : bool, optional
+        Whether to return the coordinates of the pixels, by default False
+    sort_by_feature : bool, optional
+        Whether to sort the reading table by feature index and then by row, instead of just by row, by default False
+
+    Returns
+    -------
+    np.ndarray or tuple of np.ndarray
+        (row, col0, col1, f_index), (y, x0, x1) if return_coordinates is True
+    """
+    inter_ys = intersection_coords[:, 0]
+    inter_x0s = intersection_coords[:, 1]
+    inter_x1s = intersection_coords[:, 2]
 
     rows, col0s = xy_to_rowcol(inter_x0s, inter_ys, raster.transform)
     _, col1s = xy_to_rowcol(inter_x1s, inter_ys, raster.transform)
@@ -110,20 +148,21 @@ def build_reading_table(intersection_table, raster: rio.DatasetReader, return_co
         col0s < col1s
     ]  # removes pixel reads where both intersections fall in between pixel centers
 
-    # sort by row
-    sort_idx = np.argsort(reading_table[:, 0])
-    # sort by row and f_index
-    # sort_idx = np.lexsort((reading_table[:, 0], reading_table[:, 3]))
-    
-    reading_table = reading_table[sort_idx]
+    if sort_by_feature:
+        # sort by feature first then by row
+        sort_idx = np.lexsort((reading_table[:, 0], reading_table[:, 3]))
+    else:
+        # sort just by row  
+        sort_idx = np.argsort(reading_table[:, 0])
     
     if return_coordinates:
         coor = np.stack(
-            [inter_x0s, inter_ys, inter_x1s], axis=1
-        )[sort_idx]
-        return reading_table, coor
+            [inter_ys, inter_x0s, inter_x1s], axis=1
+        )[sort_idx] # they are separate cause reading table is integer and coordinates are float
 
-    return reading_table
+        return reading_table[sort_idx], coor
+
+    return reading_table[sort_idx]
 
 class Scanline(ZonalStatMethod):
 
@@ -135,20 +174,20 @@ class Scanline(ZonalStatMethod):
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         # NOTE: ASSUMES NORTH UP, NO SHEAR AFFINE. ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
         
-        intersection_table, all_intersections = build_intersection_table(features, raster)
+        f_index, intersection_coords = build_intersection_table(features, raster)
 
-        if not intersection_table.size:
+        if not intersection_coords.size:
             self.results = [
                 self.stats.from_array(np.ma.array([], mask=True))
                 for _ in features.geometry
             ]
             return
 
-        reading_table = build_reading_table(intersection_table, raster)
+        reading_table = build_reading_table(f_index, intersection_coords, raster, return_coordinates=False, sort_by_feature=False)
 
         rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
 
-        pixel_values_per_feature = [[] for _ in range(len(all_intersections))]
+        pixel_values_per_feature = [[] for _ in range(len(features.geometry))]
 
         for i, row in enumerate(rows):
             start = row_starts[i]
