@@ -176,6 +176,28 @@ class AggQuadTree(ZonalStatMethod):
 
             return boxes, ix, iy
 
+        def get_boxes_aligned_any(level: int, raster: rio.DatasetReader):
+            from rasterio.windows import bounds as win_bounds
+            div = 2 ** level
+            W, H = raster.width, raster.height
+            tw = W // div
+            th = H // div
+
+            boxes, ix, iy = [], [], []
+            for iy_ in range(div):
+                row_off = iy_ * th
+                h_pix = th if iy_ < div - 1 else H - row_off
+                for ix_ in range(div):
+                    col_off = ix_ * tw
+                    w_pix = tw if ix_ < div - 1 else W - col_off   # <-- fix: ix_, not iy_
+                    win = rio.windows.Window(col_off, row_off, w_pix, h_pix)
+                    x0, y0, x1, y1 = win_bounds(win, raster.transform)
+                    boxes.append((x0, y0, x1, y1))
+                    ix.append(ix_); iy.append(iy_)
+            return np.asarray(boxes), np.asarray(ix), np.asarray(iy)
+
+
+
         x_min, y_min, x_max, y_max = raster.bounds
         width = x_max - x_min
         height = y_max - y_min
@@ -198,7 +220,8 @@ class AggQuadTree(ZonalStatMethod):
         for level in range(self.max_depth, -1, -1):
             divisions = 2**level
 
-            boxes, ix, iy = get_boxes(divisions, x_min, x_max, y_min, y_max)
+            # boxes, ix, iy = get_boxes(divisions, x_min, x_max, y_min, y_max)
+            boxes, ix, iy = get_boxes_aligned_any(level, raster)
 
             # Now compute the Morton Z-order values correctly
             z_indices = z_order_indices(ix, iy)
@@ -222,17 +245,17 @@ class AggQuadTree(ZonalStatMethod):
                 vector_layer = gpd.GeoDataFrame(geometry=shp_boxes, crs=feature.crs)
 
                 # count number of pixels in first box
-                box1 = vector_layer.geometry[0]
-                win = rio.windows.from_bounds(
-                    box1.bounds[0],
-                    box1.bounds[1],
-                    box1.bounds[2],
-                    box1.bounds[3],
-                    transform=raster.transform,
-                )
-                data = raster.read(window=win, masked=True)
-                data = data[0]
-                data = data[~data.mask]
+                # box1 = vector_layer.geometry[0]
+                # win = rio.windows.from_bounds(
+                #     box1.bounds[0],
+                #     box1.bounds[1],
+                #     box1.bounds[2],
+                #     box1.bounds[3],
+                #     transform=raster.transform,
+                # )
+                # data = raster.read(window=win, masked=True)
+                # data = data[0]
+                # data = data[~data.mask]
 
                 # TODO: test if masking would be faster
                 sc = Scanline()

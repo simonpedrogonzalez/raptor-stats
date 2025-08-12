@@ -123,7 +123,7 @@ def compare_stats(
     """
 
     # --- load vector layer once -------------------------------------------
-    gdf = gpd.read_file(vector_path)
+    gdf = gpd.read_file(vector_path) if isinstance(vector_path, str) else vector_path
 
     scan_res = mystats
 
@@ -136,7 +136,7 @@ def compare_stats(
 
     # --- pretty print ------------------------------------------------------
     pp = pprint.PrettyPrinter(compact=True, sort_dicts=True)
-
+    all_diffs = []
     print("\n=== Zonal-stat comparison ===")
     for i, (s, r) in enumerate(zip(scan_res, rs_res), start=1):
         print(f"\nFeature #{i}")
@@ -155,8 +155,15 @@ def compare_stats(
                 if all(isinstance(v, (int, float)) for v in (sv, rv)):
                     diff[k] = round(sv - rv, precision)
             print("  Δ(Scanline-RasterSt):", indent(pp.pformat(diff), 2 * " "))
+            if diff['count'] > 0:
+                all_diffs.append({
+                    "feature": i-1,
+                    "count1": s.get("count", 0),
+                    "count2": r.get("count", 0),
+                })
 
     print("\nDone.\n")
+    return all_diffs
 
 
 import numpy as np

@@ -14,16 +14,23 @@ def reference_method(raster_file_path, vector_file_path, stats):
 def extract_histogram(rasterstat_res):
     # extract all "number" keys from the result
     histograms = []
+    omit = []
     for res in rasterstat_res:
         hist = {}
         for key, value in res.items():
-            if isinstance(value, (int, float)):
+            if isinstance(key, (int, float)):
                 hist[key] = value
+                omit.append(key)
         histograms.append(hist)
+    
     new_res = []
+    omit = set(omit)
     for i in range(len(rasterstat_res)):
         nr = rasterstat_res[i].copy()
         nr['histogram'] = histograms[i]
+        for key in omit:
+            if key in nr:
+                del nr[key]
         new_res.append(nr)
     return new_res
 

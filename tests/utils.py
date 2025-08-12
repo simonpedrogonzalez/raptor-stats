@@ -32,13 +32,6 @@ def compare_histograms(hist1, hist2):
 def compare_stats_exact_match(reference, result):
 
     for i in range(len(result)):
-        h1 = result[i].get("histogram", {})
-        h2 = reference[i].get("histogram", {})
-        correct, errors = compare_histograms(h1, h2)
-        if not correct:
-            errors["index"] = i
-            return correct, errors
-
         for key in result[i].keys():
             if key == "histogram":
                 continue
@@ -59,6 +52,13 @@ def compare_stats_exact_match(reference, result):
                     "value": value,
                     "truth": b2,
                 }
+    # check histograms
+    h1 = result[i].get("histogram", {})
+    h2 = reference[i].get("histogram", {})
+    correct, errors = compare_histograms(h1, h2)
+    if not correct:
+        errors["index"] = i
+        return correct, errors
     return True, {}
 
 

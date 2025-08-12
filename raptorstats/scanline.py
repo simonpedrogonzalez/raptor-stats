@@ -2,8 +2,8 @@ import geopandas as gpd
 import numpy as np
 
 # Debugging code
-# from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
-# import matplotlib.pyplot as plt
+from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
+import matplotlib.pyplot as plt
 # End Debugging code
 import rasterio as rio
 import shapely
@@ -15,9 +15,11 @@ from raptorstats.stats import Stats
 
 def xy_to_rowcol(xs, ys, transform):
     cols, rows = (~transform) * (xs, ys)
-    return np.floor(rows).astype(int).clip(min=0), np.round(cols).astype(
-        int
-    ).clip(min=0)
+
+    rows = np.floor(rows).astype(int).clip(min=0)
+    cols = np.ceil(cols - 0.5).astype(int).clip(min=0)   # left-inclusive
+    # cols = np.round(cols).astype(int).clip(min=0)
+    return rows, cols
 
 def rows_to_ys(rows, transform):
     return (transform * (0, rows + 0.5))[1]
@@ -48,12 +50,6 @@ def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetRead
         pad_x=0.5,
         pad_y=0.5,
     )
-
-    # Debugging code
-    # w_height = int(np.ceil(window.height))
-    # w_width = int(np.ceil(window.width))
-    # global_mask = np.zeros((w_height+1, w_width), dtype=int)
-    # End Debugging code
 
     row_start, row_end = int(np.floor(window.row_off)), int(
         np.ceil(window.row_off + window.height)
@@ -212,14 +208,6 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
             c1 = col1 - min_col
             pixel_values = data[c0:c1]
 
-            # Debugging code
-            # mark the pixels in the global mask
-            # row_in_mask = row - row_start
-            # col0_in_mask = col0 - col_start
-            # col1_in_mask = col1 - col_start
-            # global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
-            # End Debugging code
-
             if len(pixel_values) > 0:
                 pixel_values_per_feature[f_index].append(pixel_values)
 
@@ -250,7 +238,6 @@ class Scanline(ZonalStatMethod):
         # NOTE: ASSUMES NORTH UP, NO SHEAR AFFINE. ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
         
         f_index, intersection_coords = build_intersection_table(features, raster)
-
         if not intersection_coords.size:
             self.results = [
                 self.stats.from_array(np.ma.array([], mask=True))
@@ -261,14 +248,76 @@ class Scanline(ZonalStatMethod):
         reading_table = build_reading_table(f_index, intersection_coords, raster, return_coordinates=False, sort_by_feature=False)
 
         self.results = process_reading_table(reading_table, features, raster, self.stats)
+        
         # Debugging code
-        # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
-        # ref_mask = ref_mask_rasterstats(features, raster, window)
-        # compare_stats(self.results,
-        #     self.raster.files[0], features.attrs.get('file_path'), stats=self.stats, show_diff=True, precision=5)
-        # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=inter_ys)
-        # print('done')
-        # end of debugging code
+        window = rio.features.geometry_window(
+            raster,
+            features.geometry,
+            # transform=transform,
+            pad_x=0.5,
+            pad_y=0.5,
+        )
+        w_height = int(np.ceil(window.height))
+        w_width = int(np.ceil(window.width))
+        global_mask = np.zeros((w_height+1, w_width), dtype=int)
+        rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
+        inter_ys = intersection_coords[:, 0]
+        inter_x0s = intersection_coords[:, 1]
+        inter_x1s = intersection_coords[:, 2]
+
+        row_start, row_end = int(np.floor(window.row_off)), int(
+            np.ceil(window.row_off + window.height)
+        )
+        col_start, col_end = int(np.floor(window.col_off)), int(
+            np.ceil(window.col_off + window.width)
+        )
+
+        
+        diffs = compare_stats(self.results, self.raster.files[0], features, stats=self.stats, show_diff=True, precision=5)
+        # diffs = [diffs[0]]
+        diff_indices = [d['feature'] for d in diffs]
+        diff_features = features.iloc[diff_indices]
+        f_index_to_diff_features = { f: i for i, f in enumerate(diff_indices) }
+
+        for i, row in enumerate(rows):
+            start = row_starts[i]
+            end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
+            reading_line = reading_table[start:end]
+
+            min_col = np.min(reading_line[:, 1])
+            max_col = np.max(reading_line[:, 2])
+            reading_window = rio.windows.Window(
+                col_off=min_col, row_off=row, width=max_col - min_col, height=1
+            )
+
+            # Does not handle nodata
+            data = raster.read(1, window=reading_window, masked=True)
+            if data.shape[0] == 0:
+                continue
+            data = data[0]
+
+            for j, col0, col1, f_index in reading_line:
+                # Debugging code
+                # mark the pixels in the global mask
+                row_in_mask = row - row_start
+                col0_in_mask = col0 - col_start
+                col1_in_mask = col1 - col_start
+                if len(diff_indices) > 0:
+                    if f_index in diff_indices:
+                        global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index_to_diff_features[f_index] + 1
+                else:
+                    global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+
+        global_mask = global_mask[:-1, :]  # remove the last row added for debugging
+
+        
+        ref_mask = ref_mask_rasterstats(diff_features if len(diff_indices) > 0 else features, raster, window)
+
+        print(diffs)
+        plot_mask_comparison(global_mask, ref_mask, diff_features if len(diff_indices) > 0 else features, raster.transform, window=window, scanlines=inter_ys)
+        print('done')
+
+        # End Debugging code
 
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         self._precomputations(features, raster)
