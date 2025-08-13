@@ -151,7 +151,8 @@ class Stats:
                 out["mean"] = float(valid.mean())
             if "range" in self.stats:
                 out["range"] = float(valid.max() - valid.min())
-
+            # if np.allclose(out["mean"], 229.543):
+            #     print("stop")
             if "std" in self.stats:
                 out["std"] = float(np.std(valid, ddof=0))
 
@@ -221,30 +222,52 @@ class Stats:
         histogram = collections.Counter()
 
         for r in chunks:
-            total_nodata += r.get("nodata", 0) or 0
-            total_nan += r.get("nan", 0) or 0
-            n = r.get("count", 0) or 0
+            # counts
+            n = r.get("count", 0)
             if not n:
+                total_nodata += r.get("nodata", 0) or 0
+                total_nan += r.get("nan", 0) or 0
                 continue
 
-            s = r.get("sum", 0.0) or 0.0
-            m = r.get("mean", np.nan) or np.nan
-            std = r.get("std", np.nan) or np.nan
+            total_nodata += r.get("nodata", 0) or 0
+            total_nan += r.get("nan", 0) or 0
 
+            # sum / mean
+            s = r.get("sum")
+            if s is None:
+                s = 0.0
+            m = r.get("mean")
+            if m is None or (isinstance(m, float) and np.isnan(m)):
+                m = (s / n) if n else 0.0  # fallback if mean missing
+
+            # std -> M2
+            std = r.get("std")
+            if std is None or (isinstance(std, float) and np.isnan(std)):
+                M2 = 0.0
+            else:
+                # allow true zero std to pass through
+                M2 = float(std) ** 2 * n
+
+            # combine (Welford pairwise)
             delta = m - total_mean
             new_count = total_count + n
-            M2 = std**2 * n if not np.isnan(std) else 0.0
-            total_M2 += M2 + delta**2 * total_count * n / new_count
+            total_M2 += M2 + (delta * delta) * (total_count * n) / new_count
+            total_mean += delta * n / new_count
             total_count = new_count
             total_sum += s
-            total_mean += delta * n / new_count
 
-            if "min" in r and not np.isnan(r["min"]):
-                global_min = min(global_min, r["min"])
-            if "max" in r and not np.isnan(r["max"]):
-                global_max = max(global_max, r["max"])
-            if "histogram" in r:
-                histogram.update(r["histogram"])
+            # min/max
+            vmin = r.get("min")
+            if vmin is not None and not np.isnan(vmin):
+                global_min = min(global_min, vmin)
+            vmax = r.get("max")
+            if vmax is not None and not np.isnan(vmax):
+                global_max = max(global_max, vmax)
+
+            # histogram
+            h = r.get("histogram")
+            if h:
+                histogram.update(h)
 
         out = {stat: np.nan for stat in self.stats}
 
@@ -265,6 +288,8 @@ class Stats:
                 out["max"] = float(global_max)
             if "mean" in self.stats:
                 out["mean"] = float(total_sum / total_count)
+            # if np.allclose(out["mean"], 229.543):
+            #     print("stop")
             if "range" in self.stats:
                 out["range"] = float(global_max - global_min)
 
@@ -274,17 +299,32 @@ class Stats:
             if "median" in self.stats or self.percentiles:
                 # build cumulative distribution
                 vals, cnts = zip(*sorted(histogram.items()))
-                cum = np.cumsum(cnts)
+                # cum = np.cumsum(cnts)
 
-                def _quantile(q):
-                    target = q / 100.0 * total_count
-                    idx = np.searchsorted(cum, target, side="left")
-                    return float(vals[min(idx, len(vals) - 1)])
+                def _quantile(vals, cnts, q):
+                    vals = np.asarray(vals, float)
+                    cnts = np.asarray(cnts, int)
+                    order = np.argsort(vals)
+                    vals, cnts = vals[order], cnts[order]
+                    cum = np.cumsum(cnts)
+                    N = cum[-1]
+
+                    # NumPy-like "linear" between order stats
+                    k = (N - 1) * q
+                    j = np.floor(k).astype(int)
+                    g = k - j
+
+                    def kth(k0):
+                        return vals[np.searchsorted(cum, k0 + 1, side="left")]
+
+                    vj  = np.vectorize(kth)(j)
+                    vj1 = np.vectorize(kth)(np.minimum(j + 1, N - 1))
+                    return (1 - g) * vj + g * vj1
 
                 if "median" in self.stats:
-                    out["median"] = _quantile(50.0)
+                    out["median"] = _quantile(vals=vals, cnts=cnts, q=0.5)
                 for q in self.percentiles:
-                    out[f"percentile_{int(q)}"] = _quantile(q)
+                    out[f"percentile_{int(q)}"] = _quantile(vals=vals, cnts=cnts, q=q)
 
             if self.run_count:
                 if "unique" in self.stats:

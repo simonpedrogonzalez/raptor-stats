@@ -158,49 +158,115 @@ class AggQuadTree(ZonalStatMethod):
         def z_order_indices(xs, ys):
             return (part1by1(ys) << 1) | part1by1(xs)
 
-        def get_boxes(divisions, x_min, x_max, y_min, y_max):
-            dx = (x_max - x_min) / divisions
-            dy = (y_max - y_min) / divisions
-            x_starts = np.linspace(x_min, x_max - dx, divisions)
-            y_starts = np.linspace(y_min, y_max - dy, divisions)
-            xs, ys = np.meshgrid(x_starts, y_starts)
-            boxes = np.stack(
-                [xs.flatten(), ys.flatten(), (xs + dx).flatten(), (ys + dy).flatten()],
-                axis=1,
-            )
-
-            # ALSO get the corresponding grid indices (ix, iy) to calculate Z-order
-            grid_xs, grid_ys = np.meshgrid(np.arange(divisions), np.arange(divisions))
-            ix = grid_xs.flatten()
-            iy = grid_ys.flatten()
-
-            return boxes, ix, iy
-
-        def get_boxes_aligned_any(level: int, raster: rio.DatasetReader):
+        def get_boxes_aligned_even(divisions: int, raster: rio.DatasetReader):
+            """
+            Build a divisions x divisions grid of pixel-aligned tiles with remainder
+            distributed as evenly as possible. Returns (boxes, ix, iy) with boxes
+            as (left, bottom, right, top) in CRS coords.
+            """
+            from rasterio.windows import Window
             from rasterio.windows import bounds as win_bounds
-            div = 2 ** level
+
+            if divisions <= 0:
+                raise ValueError("divisions must be > 0")
+
             W, H = raster.width, raster.height
-            tw = W // div
-            th = H // div
+
+            # Integer edges: floor(i*W/D), floor(j*H/D)
+            col_edges = (np.arange(divisions + 1) * W) // divisions
+            row_edges = (np.arange(divisions + 1) * H) // divisions
+
+            col_offs = col_edges[:-1].astype(int)
+            row_offs = row_edges[:-1].astype(int)
+            widths   = np.diff(col_edges).astype(int)
+            heights  = np.diff(row_edges).astype(int)
 
             boxes, ix, iy = [], [], []
-            for iy_ in range(div):
-                row_off = iy_ * th
-                h_pix = th if iy_ < div - 1 else H - row_off
-                for ix_ in range(div):
-                    col_off = ix_ * tw
-                    w_pix = tw if ix_ < div - 1 else W - col_off   # <-- fix: ix_, not iy_
-                    win = rio.windows.Window(col_off, row_off, w_pix, h_pix)
-                    x0, y0, x1, y1 = win_bounds(win, raster.transform)
-                    boxes.append((x0, y0, x1, y1))
-                    ix.append(ix_); iy.append(iy_)
-            return np.asarray(boxes), np.asarray(ix), np.asarray(iy)
+            for iy_ in range(divisions):
+                h = heights[iy_]
+                r0 = row_offs[iy_]
+                for ix_ in range(divisions):
+                    w = widths[ix_]
+                    c0 = col_offs[ix_]
+                    win = Window(c0, r0, w, h)
+                    boxes.append(win_bounds(win, raster.transform))
+                    ix.append(ix_)
+                    iy.append(iy_)
 
+            return np.asarray(boxes, float), np.asarray(ix, int), np.asarray(iy, int)
 
+        def get_boxes_aligned_any(divisions: int, raster: rio.DatasetReader):
+            """
+            Make a divisions x divisions grid of pixel-aligned tiles that together
+            cover the whole raster. Tile widths/heights differ by at most 1 pixel.
+            Returns (boxes, ix, iy) where boxes are (left, bottom, right, top).
+            """
+            from rasterio.windows import Window
+            from rasterio.windows import bounds as win_bounds
+
+            if divisions <= 0:
+                raise ValueError("divisions must be > 0")
+
+            W, H = raster.width, raster.height
+            w_base, w_extra = divmod(W, divisions)  # first w_extra columns are w_base+1 px wide
+            h_base, h_extra = divmod(H, divisions)  # first h_extra rows are h_base+1 px tall
+
+            # per-column widths and per-row heights (pixel counts)
+            widths  = np.concatenate([np.full(w_extra, w_base + 1, int),
+                                    np.full(divisions - w_extra, w_base, int)])
+            heights = np.concatenate([np.full(h_extra, h_base + 1, int),
+                                    np.full(divisions - h_extra, h_base, int)])
+
+            # integer pixel offsets
+            col_offs = np.zeros(divisions, dtype=int)
+            row_offs = np.zeros(divisions, dtype=int)
+            col_offs[1:] = np.cumsum(widths)[:-1]
+            row_offs[1:] = np.cumsum(heights)[:-1]
+
+            boxes = []
+            ix = []
+            iy = []
+            for iy_ in range(divisions):
+                for ix_ in range(divisions):
+                    win = Window(col_offs[ix_], row_offs[iy_], widths[ix_], heights[iy_])
+                    # bounds: (left, bottom, right, top), aligned to pixel edges
+                    boxes.append(win_bounds(win, raster.transform))
+                    ix.append(ix_)
+                    iy.append(iy_)
+
+            return np.array(boxes, dtype=float), np.array(ix, dtype=int), np.array(iy, dtype=int)
+
+        def coarsen_from_children(boxes, ix, iy, divisions):
+            """Given current level (divisions×divisions) tiles, build parent level ((div/2)×(div/2))
+            by grouping children with parent indices (ix//2, iy//2) and unioning bounds."""
+            parent_div = divisions // 2
+            pix = ix // 2
+            piy = iy // 2
+            # Composite key to group by parent cell
+            keys = piy * parent_div + pix
+            order = np.argsort(keys)
+            boxes = boxes[order]; pix = pix[order]; piy = piy[order]; keys = keys[order]
+
+            uniq, starts = np.unique(keys, return_index=True)
+            out_boxes = np.empty((len(uniq), 4), dtype=boxes.dtype)
+            out_ix = np.empty(len(uniq), dtype=int)
+            out_iy = np.empty(len(uniq), dtype=int)
+
+            for k in range(len(uniq)):
+                s = starts[k]
+                e = starts[k+1] if k+1 < len(uniq) else len(keys)
+                g = boxes[s:e]  # children group (≤4 tiles; at edges could be <4 if div was odd, but here div is power of 2)
+                # union bounds
+                out_boxes[k, 0] = np.min(g[:, 0])  # left
+                out_boxes[k, 1] = np.min(g[:, 1])  # bottom
+                out_boxes[k, 2] = np.max(g[:, 2])  # right
+                out_boxes[k, 3] = np.max(g[:, 3])  # top
+                out_ix[k] = pix[s]
+                out_iy[k] = piy[s]
+            return out_boxes, out_ix, out_iy
+        # def get_boxes_intermediate()
 
         x_min, y_min, x_max, y_max = raster.bounds
-        width = x_max - x_min
-        height = y_max - y_min
 
         n_pixels_width = raster.width
         n_pixels_height = raster.height
@@ -208,94 +274,76 @@ class AggQuadTree(ZonalStatMethod):
         if min_size / (2**self.max_depth) < 1:
             raise ValueError(
                 f"Max depth {self.max_depth} is too high for raster size {n_pixels_width}x{n_pixels_height}. "
-                "Reduce max_depth or increase raster size."
+                "Reduce max_depth."
             )
 
-        n_total_boxes = sum([4**i for i in range(self.max_depth + 1)])
         box_index = 0
         idx = index.Index(self.index_path)
-
         all_nodes = []
 
+        # Build **leaf** level once
+        level = self.max_depth
+        divisions = 2**level
+        boxes, ix, iy = get_boxes_aligned_even(divisions, raster)
+
+        previous_aggregates = None
+        previous_parent_ids = None
+
+        # Iterate from leaves up to root, coarsening each time
         for level in range(self.max_depth, -1, -1):
             divisions = 2**level
 
-            # boxes, ix, iy = get_boxes(divisions, x_min, x_max, y_min, y_max)
-            boxes, ix, iy = get_boxes_aligned_any(level, raster)
-
-            # Now compute the Morton Z-order values correctly
+            # z-order + stable sort for this level
             z_indices = z_order_indices(ix, iy)
-            # Sort the boxes accordingly
             sort_idx = np.argsort(z_indices)
-            boxes = boxes[sort_idx]
-            z_indices = z_indices[sort_idx]
-            ids = z_indices + box_index
-            shp_boxes = [box(x0, y0, x1, y1) for x0, y0, x1, y1 in boxes]
-            n_boxes = len(boxes)
-            box_index = box_index + n_boxes
+            boxes_lvl = boxes[sort_idx]
+            ix_lvl    = ix[sort_idx]
+            iy_lvl    = iy[sort_idx]
+            z_lvl     = z_indices[sort_idx]
+
+            ids = z_lvl + box_index
+            shp_boxes = [box(x0, y0, x1, y1) for (x0, y0, x1, y1) in boxes_lvl]
+            n_boxes = len(boxes_lvl)
+            box_index += n_boxes  # advance global id space to parent level
 
             if level == 0:
                 parent_ids = np.array([-1])
             else:
-                # parent_div = 2 ** (level - 1)
-                parent_ids = (z_indices // 4) + box_index
+                parent_ids = (z_lvl // 4) + box_index  # parent ids live in the *next* chunk
 
             if level == self.max_depth:
-
+                # Compute aggregates only once (on leaves)
                 vector_layer = gpd.GeoDataFrame(geometry=shp_boxes, crs=feature.crs)
-
-                # count number of pixels in first box
-                # box1 = vector_layer.geometry[0]
-                # win = rio.windows.from_bounds(
-                #     box1.bounds[0],
-                #     box1.bounds[1],
-                #     box1.bounds[2],
-                #     box1.bounds[3],
-                #     transform=raster.transform,
-                # )
-                # data = raster.read(window=win, masked=True)
-                # data = data[0]
-                # data = data[~data.mask]
-
-                # TODO: test if masking would be faster
                 sc = Scanline()
-                aggregates = sc(raster, vector_layer, self.stats)
-                aggregates = np.array(aggregates)
-                # print(f"Aggregates count: {aggregates[0]['count']}")
+                aggregates = np.array(sc(raster, vector_layer, self.stats))
             else:
-                # use self._combine_stats to combine the stats of the previous level
-                # run combine over the previous_aggregates using previous_ids
-                # to know which previous_aggregates belong to which parent
-
+                # Combine child aggregates into parents using parent_ids computed at previous (finer) level
                 aggregates = []
-                unique_previous_parents = np.unique(previous_parent_ids)
-                for p_id in unique_previous_parents:
+                for p_id in np.unique(previous_parent_ids):
                     mask = previous_parent_ids == p_id
                     child_aggregates = previous_aggregates[mask]
-                    combined = self.stats.from_partials(child_aggregates)
-                    aggregates.append(combined)
+                    aggregates.append(self.stats.from_partials(child_aggregates))
                 aggregates = np.array(aggregates)
 
             previous_aggregates = aggregates
             previous_parent_ids = parent_ids
 
-            # test_plot(boxes, aggregates, parent_ids, ids)
-
-            ns = []
-            for i in range(len(boxes)):
-
+            # Emit nodes for this level
+            for i in range(n_boxes):
                 node = Node(
                     _id=ids[i],
-                    parent_id=parent_ids[i],
+                    parent_id=parent_ids[i] if level > 0 else -1,
                     level=level,
                     max_depth=self.max_depth,
                     _box=shp_boxes[i],
                     stats=aggregates[i],
                 )
-                ns.append(node)
-                idx.insert(ids[i], boxes[i], obj=node)
+                idx.insert(ids[i], boxes_lvl[i], obj=node)
                 all_nodes.append(node)
 
+            # Prepare **parent** level boxes by unioning children bounds
+            if level > 0:
+                boxes, ix, iy = coarsen_from_children(boxes_lvl, ix_lvl, iy_lvl, divisions)
         self.idx = idx
 
     def _load_quad_tree(self):

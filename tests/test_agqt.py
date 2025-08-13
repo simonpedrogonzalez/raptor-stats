@@ -11,7 +11,11 @@ import simplejson
 from affine import Affine
 from shapely.geometry import Polygon, box
 from utils import compare_stats_exact_match, compute_file_hash
-
+from raptorstats.agqt import AggQuadTree
+from raptorstats.io import open_raster, open_vector
+from raptorstats.stats import Stats
+import rasterio as rio
+    
 from raptorstats import zonal_stats
 from raptorstats.stats import VALID_STATS
 
@@ -44,6 +48,7 @@ def test_builds_index():
     assert round(stats[0]["mean"], 2) == 14.66
     os.remove(f"{INDICES}/new_index.idx")
     os.remove(f"{INDICES}/new_index.dat")
+
 
 def test_force_rebuild_index():
     polygons = os.path.join(DATA, "polygons.shp")
@@ -89,6 +94,54 @@ def test_use_existing_index():
     # check that the index files were untouched
     hash_after = compute_file_hash(f"{INDICES}/my_index.idx") + compute_file_hash(f"{INDICES}/my_index.dat")
     assert hash_before == hash_after, "Index files were modified unexpectedly."
+
+
+def test_compute_tree():
+    polygons = os.path.join(DATA, "polygons.shp")
+    default_file = "index_AggQuadTree_depth_5"
+
+    with open_raster(raster) as raster_ds:
+        features = open_vector(polygons)
+        agqt = AggQuadTree(max_depth=5, index_path=f"{INDICES}/{default_file}.idx")
+        agqt.stats = Stats("*")
+        agqt._compute_quad_tree(features, raster_ds)
+        idx = agqt.idx
+        
+        # Correct number of nodes
+        n_all_nodes_created = len(list(idx.intersection(idx.bounds, objects=False)))
+        win_bounds = raster_ds.window_bounds(rio.windows.Window(0, 0, raster_ds.width, raster_ds.height))
+        all_nodes = list(idx.intersection(win_bounds, objects=True)) # within window
+        n_nodes = (4**(5 + 1) - 1) // (4 - 1)  # geometric series of 4 divisions
+        # All nodes created are inside the window and match the expected count
+        assert len(all_nodes) == n_all_nodes_created == n_nodes, \
+            "Number of nodes in the index does not match expected count"
+        
+        # Correct stats
+        all_nodes = [node.object for node in all_nodes]
+        all_nodes = sorted(all_nodes, key=lambda x: x.level)[::-1]
+        node_stats = [n.stats for n in all_nodes]
+        correct_stats = json.load(open(os.path.join(DATA, "test_agqt_tree_results.json")))
+        correct, errors = compare_stats_exact_match(correct_stats,node_stats)
+        assert correct, f"Node stats do not match truth: {errors}"
+        
+        # Test each pixel is in one node of each level
+        # The most painful way...
+        for i in range(raster_ds.width):
+            for j in range(raster_ds.height):
+                pixel_bounds = raster_ds.xy(j, i)
+                nodes = list(idx.intersection(pixel_bounds, objects=True))
+                assert len(nodes) == 5+1, f"Pixel at ({i}, {j}) is not in 5 nodes"
+                node_levels = [node.object.level for node in nodes]
+                assert sorted(node_levels) == list(range(5+1)), f"Pixel at ({i}, {j}) is not in nodes of all levels"
+        
+        # Test exists files
+        assert os.path.exists(f"{INDICES}/{default_file}.idx")
+        assert os.path.exists(f"{INDICES}/{default_file}.dat")
+
+        # Remove index files
+        os.remove(f"{INDICES}/{default_file}.idx")
+        os.remove(f"{INDICES}/{default_file}.dat")
+
 
 def test_US():
     states = os.path.join(DATA, "cb_2018_us_state_20m_filtered_filtered.shp")
