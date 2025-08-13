@@ -407,9 +407,10 @@ class AggQuadTree(ZonalStatMethod):
         w_height = int(np.ceil(window.height))
         w_width = int(np.ceil(window.width))
         global_mask = np.zeros((w_height+1, w_width), dtype=int)
-        # original_reading_table = reading_table.copy()
         inter_ys = coord_table[:, 0]
-        used_nodes = []
+        used_nodes = [[] for _ in range(n_features)]
+        subset_row0 = int(np.floor(window.row_off).clip(min=0))
+        subset_col0 = int(np.floor(window.col_off).clip(min=0))
         # End Debugging
 
         for f_index, geom in enumerate(features.geometry):
@@ -472,9 +473,19 @@ class AggQuadTree(ZonalStatMethod):
                     n_x0, n_y0, n_x1, n_y1, transform=transform
                 )
                 sq_win = sq_win.round_offsets().round_lengths()
+                inter = rio.windows.intersection(sq_win, window)
                 # mark in global mask
-                global_mask[sq_win.row_off:sq_win.row_off + sq_win.height, sq_win.col_off:sq_win.col_off + sq_win.width] = f_index + 1
-                used_nodes.append(node)
+                loc_row0 = int(round(inter.row_off - subset_row0))
+                loc_col0 = int(round(inter.col_off - subset_col0))
+                h = int(round(inter.height))
+                w = int(round(inter.width))
+                # clamp just in case of tiny float fuzz
+                r1 = max(0, loc_row0); c1 = max(0, loc_col0)
+                r2 = min(global_mask.shape[0], r1 + h)
+                c2 = min(global_mask.shape[1], c1 + w)
+                if r1 < r2 and c1 < c2:
+                    global_mask[r1:r2, c1:c2] = f_index + 1
+                used_nodes[f_index].append(node)
                 # ensure stats are correct
                 import rasterstats
                 assert rasterstats.zonal_stats(node.box, raster.name, stats="count")[0]['count'] == node.stats['count']
@@ -592,7 +603,7 @@ class AggQuadTree(ZonalStatMethod):
         new_reading_table = np.vstack(new_reading_table)
         new_coord_table = np.vstack(new_coord_table)
         # sort new reading table by rows
-        # sort_idx = np.lexsort((new_reading_table[:, 0], new_reading_table[:, 3]))
+        # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
         sort_idx = np.argsort(new_reading_table[:, 0])
         reading_table = new_reading_table[sort_idx]
         coord_table = new_coord_table[sort_idx]
@@ -615,7 +626,7 @@ class AggQuadTree(ZonalStatMethod):
 
         diffs = compare_stats(self.results, self.raster.files[0], features, stats=self.stats, show_diff=True, precision=5)
         
-        # diffs = [diffs[0]]
+        diffs = []
         diff_indices = [d['feature'] for d in diffs]
         diff_features = features.iloc[diff_indices]
         f_index_to_diff_features = { f: i for i, f in enumerate(diff_indices) }
@@ -651,9 +662,14 @@ class AggQuadTree(ZonalStatMethod):
 
         
         ref_mask = ref_mask_rasterstats(diff_features if len(diff_indices) > 0 else features, raster, window)
-
+        diff_used_nodes = []
+        for di in diff_indices:
+            diff_used_nodes.append(used_nodes[di])
+        diff_used_nodes = [n for nlist in diff_used_nodes for n in nlist]
+        used_nodes= [ n for nlist in used_nodes for n in nlist ]
+        # used_nodes = []
         print(diffs)
-        plot_mask_comparison(global_mask, ref_mask, diff_features if len(diff_indices) > 0 else features, raster.transform, window=window, scanlines=inter_ys, idx=self.idx, used_nodes=used_nodes)
+        plot_mask_comparison(global_mask, ref_mask, diff_features if len(diff_indices) > 0 else features, raster.transform, window=window, scanlines=inter_ys, idx=self.idx, used_nodes=diff_used_nodes if len(diff_indices) >0 else used_nodes)
         print('done')
 
         # End Debugging code

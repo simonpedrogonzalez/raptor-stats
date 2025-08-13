@@ -97,7 +97,7 @@ def plot_mask_comparison(
     if used_nodes is not None:
         used_boxes = [node.box for node in used_nodes]
         gdf_used = gpd.GeoDataFrame(geometry=gpd.GeoSeries(used_boxes), crs=features.crs)
-        gdf_used.plot(ax=ax, facecolor="green", edgecolor="black", linewidth=0.5, alpha=0.5)
+        gdf_used.plot(ax=ax, facecolor="green", edgecolor="black", linewidth=0.5, alpha=0.6)
 
     ax.set_aspect("equal")
     plt.tight_layout()
