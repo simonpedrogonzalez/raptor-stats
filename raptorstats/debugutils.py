@@ -17,6 +17,8 @@ def plot_mask_comparison(
     title: str = "Mask comparison",
     show_grid: bool = True,
     scanlines: np.ndarray = None,
+    idx: int = None,
+    used_nodes: list = None,
 ):
     """
     Visualise agreement / disagreement between two binary-or-indexed masks.
@@ -85,6 +87,17 @@ def plot_mask_comparison(
         Patch(facecolor="red", edgecolor="none", label="ref only"),
     ]
     ax.legend(handles=legend_patches, loc="upper right")
+
+    if idx is not None:
+        all_nodes = list(idx.intersection(idx.bounds, objects=True))
+        all_boxes = [node.object.box for node in all_nodes]
+        gdf = gpd.GeoDataFrame(geometry=gpd.GeoSeries(all_boxes), crs=features.crs)
+        gdf.plot(ax=ax, facecolor="none", edgecolor="black", linewidth=0.5)
+
+    if used_nodes is not None:
+        used_boxes = [node.box for node in used_nodes]
+        gdf_used = gpd.GeoDataFrame(geometry=gpd.GeoSeries(used_boxes), crs=features.crs)
+        gdf_used.plot(ax=ax, facecolor="green", edgecolor="black", linewidth=0.5, alpha=0.5)
 
     ax.set_aspect("equal")
     plt.tight_layout()
