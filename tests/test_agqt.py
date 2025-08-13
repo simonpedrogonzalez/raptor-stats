@@ -99,6 +99,10 @@ def test_use_existing_index():
 def test_compute_tree():
     polygons = os.path.join(DATA, "polygons.shp")
     default_file = "index_AggQuadTree_depth_5"
+    if os.path.exists(f"{INDICES}/{default_file}.idx"):
+        os.remove(f"{INDICES}/{default_file}.idx")
+    if os.path.exists(f"{INDICES}/{default_file}.dat"):
+        os.remove(f"{INDICES}/{default_file}.dat")
 
     with open_raster(raster) as raster_ds:
         features = open_vector(polygons)
@@ -116,6 +120,11 @@ def test_compute_tree():
         assert len(all_nodes) == n_all_nodes_created == n_nodes, \
             "Number of nodes in the index does not match expected count"
         
+        # Correct bounds
+        idx_bounds = np.array(idx.bounds)
+        raster_bounds = np.array(raster_ds.bounds)
+        assert np.allclose(idx_bounds, raster_bounds), "Index bounds do not match raster bounds"
+
         # Correct stats
         all_nodes = [node.object for node in all_nodes]
         all_nodes = sorted(all_nodes, key=lambda x: x.level)[::-1]
