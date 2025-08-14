@@ -9,19 +9,16 @@ from raptorstats.agqt import AggQuadTree
 from raptorstats.io import open_raster, open_vector, validate_is_north_up, validate_raster_vector_compatibility
 
 kwargs5 = {
-    'method': "agqt",
     'max_depth': 5,
     'index_path': f"experiments/indices/US_MSR_upsampled_4_US_counties_depth_5.idx",
     'build_index': False,
 }
 kwargs7 = {
-    'method': "agqt",
     'max_depth': 7,
     'index_path': f"experiments/indices/US_MSR_upsampled_4_US_counties_depth_7.idx",
     'build_index': False,
 }
 kwargs10 = {
-    'method': "agqt",
     'max_depth': 10,
     'index_path': f"experiments/indices/US_MSR_upsampled_4_US_counties_depth_10.idx",
     'build_index': False,
@@ -92,7 +89,7 @@ exps = [
         raster_path=US_MSR_upsampled_4,
         vector_path=US_counties,
         func=method,
-        reps=7,
+        reps=1,
         stats="*",
         check_results=False,
     ) for method in methods

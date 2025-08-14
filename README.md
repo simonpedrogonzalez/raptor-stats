@@ -18,9 +18,9 @@ pip install raptor-stats
 from raptorstats import zonal_stats
 
 # Example usage
-stats = zonal_stats("path/to/raster.tif", "path/to/vector.shp", method="scanline")
+stats = zonal_stats("path/to/vector.shp", "path/to/raster.tif", method="scanline")
 ```
-Note: see the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor-stats-docs/raptorstats.api.html#raptorstats.api.zonal_stats) for more details.
+Note: see the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor-stats-docs/raptorstats.api.html#raptorstats.api.zonal_stats) for more details on input types and additional parameters.
 
 ## Methods
 
@@ -30,5 +30,5 @@ Note: see the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor
 ## Credits
 
 - Author: [Simon Pedro Gonzalez](https://simonpedrogonzalez.github.io/)
-- This package is based on the following [project](https://github.com/yourusername/raptor-stats), where you can read more about the zonal stats problem, methods and performance comparison.
+- This package is based on the following <a href="_static/mdml_final_report.pdf" download>project</a>, where you can read more about the zonal stats problem, methods and performance comparison.
 - This package API and tests are heavily inspired in the [rasterstats](https://github.com/perrygeo/python-rasterstats) package by [Matthew Perry](https://github.com/perrygeo).

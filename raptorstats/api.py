@@ -25,15 +25,25 @@ def zonal_stats(
 ):
     """Zonal statistics using the AggQuadTree or Scanline methods.
 
+    The method supports quite a few input types for both vectors and rasters, with options
+    to select band, layers, specify affine, etc. However, the loading method will make
+    assumptions for some of them, so if your input is exotic (or you see errors),
+    ideally you might want to transform it yourself to a north-up, one-band, no-shearing
+    rasterio DatasetReader and a geopandas closed-polygon-only GeoDataFrame with the
+    same CRS as the raster.
+
     Parameters
     ----------
-    vectors :  str | GeoDataFrame | anything GeoPandas can read
-    raster  :  str | path-like | rasterio.DatasetReader
+    vectors :  str | Path | geopandas.GeoDataFrame |
+                shapely.geometry.base.BaseGeometry | Sequence[BaseGeometry] |
+                dict (GeoJSON-like mapping),
+                anything GeoPandas can read.
+    raster  :  str | Path | rasterio.io.DatasetReader | np.ndarray | anything rasterio can read
     stats   :  list[str]            statistics to compute (min, max, mean, etc.)
     layer   :  int | str            layer name/number for multi-layer vector sources
     band    :  int                  raster band (1-based)
     nodata  :  float | None         overrides raster NODATA value
-    affine  :  affine.Affine | None required if `raster` is a NumPy array (not used here)
+    affine  :  affine.Affine | None required if `raster` is a NumPy array
     prefix  :  str | None           prefix every stat key (useful for merges)
     categorical : bool              whether to compute categorical stats (histogram)
     method  :  str                  zonal statistics method to use ('agqt' or 'scanline')
