@@ -5,7 +5,7 @@ import shapely as shp
 from rasterio.mask import mask as rio_mask
 from rasterstats import zonal_stats
 
-from raptorstats.zone_stat_method import ZonalStatMethod
+from raptorstats.zonal_stat_method import ZonalStatMethod
 
 
 class RasterStatsMasking(ZonalStatMethod):

@@ -7,7 +7,7 @@ from raptorstats.node import Node
 from raptorstats.scanline import Scanline
 from rtree import index
 from shapely import box
-from raptorstats.zone_stat_method import ZonalStatMethod
+from raptorstats.zonal_stat_method import ZonalStatMethod
 from raptorstats.scanline import build_intersection_table, build_reading_table, process_reading_table
 import warnings
 
@@ -37,6 +37,7 @@ class AggQuadTree(ZonalStatMethod):
     def _get_params(self):
         return {"max_depth": self.max_depth, "index_path": self.index_path}
 
+    
     def _compute_scanline_reading_table(
         self, features: gpd.GeoDataFrame, raster: rio.DatasetReader
     ):
@@ -65,7 +66,6 @@ class AggQuadTree(ZonalStatMethod):
         self.n_features = len(features.geometry)
         self.effective_n_features = len(f_index_starts)
 
-    # @line_profiler.profile
     def _compute_quad_tree(self, feature: gpd.GeoDataFrame, raster: rio.DatasetReader):
 
         def part1by1(n):
@@ -242,7 +242,7 @@ class AggQuadTree(ZonalStatMethod):
         if os.path.exists(dat_file):
             os.remove(dat_file)
 
-    # @line_profiler.profile
+    
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         if self._should_build_indices():
             if self._index_files_exist():
@@ -255,7 +255,7 @@ class AggQuadTree(ZonalStatMethod):
             self._load_quad_tree()
         self._compute_scanline_reading_table(features, raster)
 
-    # @line_profiler.profile
+    
     def _run(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         self._precomputations(features, raster)
 
@@ -438,6 +438,7 @@ class AggQuadTree(ZonalStatMethod):
                 # # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
                 # step_sort_idx = np.argsort(step_reading_table[:, 0])
                 # step_reading_table = step_reading_table[step_sort_idx]
+                # "Help me, Step Reading Table, I'm stuck...."
                 # # step_coord_table = step_coord_table[step_sort_idx]
                 # # was_outside = was_outside[step_sort_idx]
                 # rows, row_starts = np.unique(step_reading_table[:, 0], return_index=True)

@@ -9,7 +9,7 @@ import rasterio as rio
 import shapely
 from shapely import LineString, MultiLineString
 
-from raptorstats.zone_stat_method import ZonalStatMethod
+from raptorstats.zonal_stat_method import ZonalStatMethod
 from raptorstats.stats import Stats
 
 

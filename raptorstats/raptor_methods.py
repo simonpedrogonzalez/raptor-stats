@@ -12,7 +12,7 @@ from node import Node
 from raster_methods import Masking
 from rtree import index
 from shapely import Geometry, MultiLineString, box
-from zone_stat_method import ZonalStatMethod
+from raptorstats.zonal_stat_method import ZonalStatMethod
 
 
 class Scanline(ZonalStatMethod):
