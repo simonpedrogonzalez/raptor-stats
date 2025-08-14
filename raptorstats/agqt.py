@@ -131,6 +131,12 @@ class AggQuadTree(ZonalStatMethod):
             coord_table = np.empty((0, 3), dtype=float)
             f_index_starts = np.array([], dtype=int)
             unique_f_indices = np.array([], dtype=int)
+            self._reading_table = reading_table
+            self._coord_table = coord_table
+            self.f_index_starts = f_index_starts
+            self.unique_f_indices = unique_f_indices
+            self.n_features = len(features.geometry)
+            self.effective_n_features = 0
             return
 
         reading_table, coord_table = build_reading_table(
@@ -142,7 +148,8 @@ class AggQuadTree(ZonalStatMethod):
         unique_f_indices, f_index_starts = np.unique(reading_table[:, 3], return_index=True)
         self.f_index_starts = f_index_starts
         self.unique_f_indices = unique_f_indices
-        self.n_features = len(unique_f_indices)
+        self.n_features = len(features.geometry)
+        self.effective_n_features = len(f_index_starts)
 
     # @line_profiler.profile
     def _compute_quad_tree(self, feature: gpd.GeoDataFrame, raster: rio.DatasetReader):
@@ -194,47 +201,6 @@ class AggQuadTree(ZonalStatMethod):
                     iy.append(iy_)
 
             return np.asarray(boxes, float), np.asarray(ix, int), np.asarray(iy, int)
-
-        def get_boxes_aligned_any(divisions: int, raster: rio.DatasetReader):
-            """
-            Make a divisions x divisions grid of pixel-aligned tiles that together
-            cover the whole raster. Tile widths/heights differ by at most 1 pixel.
-            Returns (boxes, ix, iy) where boxes are (left, bottom, right, top).
-            """
-            from rasterio.windows import Window
-            from rasterio.windows import bounds as win_bounds
-
-            if divisions <= 0:
-                raise ValueError("divisions must be > 0")
-
-            W, H = raster.width, raster.height
-            w_base, w_extra = divmod(W, divisions)  # first w_extra columns are w_base+1 px wide
-            h_base, h_extra = divmod(H, divisions)  # first h_extra rows are h_base+1 px tall
-
-            # per-column widths and per-row heights (pixel counts)
-            widths  = np.concatenate([np.full(w_extra, w_base + 1, int),
-                                    np.full(divisions - w_extra, w_base, int)])
-            heights = np.concatenate([np.full(h_extra, h_base + 1, int),
-                                    np.full(divisions - h_extra, h_base, int)])
-
-            # integer pixel offsets
-            col_offs = np.zeros(divisions, dtype=int)
-            row_offs = np.zeros(divisions, dtype=int)
-            col_offs[1:] = np.cumsum(widths)[:-1]
-            row_offs[1:] = np.cumsum(heights)[:-1]
-
-            boxes = []
-            ix = []
-            iy = []
-            for iy_ in range(divisions):
-                for ix_ in range(divisions):
-                    win = Window(col_offs[ix_], row_offs[iy_], widths[ix_], heights[iy_])
-                    # bounds: (left, bottom, right, top), aligned to pixel edges
-                    boxes.append(win_bounds(win, raster.transform))
-                    ix.append(ix_)
-                    iy.append(iy_)
-
-            return np.array(boxes, dtype=float), np.array(ix, dtype=int), np.array(iy, dtype=int)
 
         def coarsen_from_children(boxes, ix, iy, divisions):
             """Given current level (divisions×divisions) tiles, build parent level ((div/2)×(div/2))
@@ -383,28 +349,40 @@ class AggQuadTree(ZonalStatMethod):
         coord_table = self._coord_table
         f_index_starts = self.f_index_starts
         n_features = self.n_features
-        transform = raster.transform
+        n_eff_features = self.effective_n_features
 
-        def xy_to_rowcol(xs, ys, transform):
-            cols, rows = (~transform) * (xs, ys)
+        if reading_table.size == 0:
+            # No intersections found, return empty stats
+            return [self.stats.empty() for _ in range(n_features)]
+        
+        # transform = raster.transform
 
-            rows = np.floor(rows).astype(int).clip(min=0)
-            cols = np.ceil(cols - 0.5).astype(int).clip(min=0)   # left-inclusive
-            # cols = np.round(cols).astype(int).clip(min=0)
-            return rows, cols
+        # def xy_to_rowcol(xs, ys, transform):
+        #     cols, rows = (~transform) * (xs, ys)
+
+        #     rows = np.floor(rows).astype(int).clip(min=0)
+        #     cols = np.ceil(cols - 0.5).astype(int).clip(min=0)   # left-inclusive
+        #     # cols = np.round(cols).astype(int).clip(min=0)
+        #     return rows, cols
 
         new_reading_table = []
         new_coord_table = []
         partials = [[] for _ in range(n_features)]
 
         # Debugging
-        H, W = raster.height, raster.width
-        window = rio.windows.Window(0, 0, W, H).round_offsets().round_lengths()  # for plotting/ref
-        global_mask = np.zeros((H, W), dtype=int)  # global mask for debugging
-        used_nodes = [[] for _ in range(n_features)]
+        # H, W = raster.height, raster.width
+        # window = rio.windows.Window(0, 0, W, H).round_offsets().round_lengths()  # for plotting/ref
+        # global_mask = np.zeros((H, W), dtype=int)  # global mask for debugging
+        # used_nodes = [[] for _ in range(n_features)]
         # End Debugging
 
         for f_index, geom in enumerate(features.geometry):
+
+            if f_index not in self.unique_f_indices:
+                # skip features that do not have any intersections
+                # self.unique_f_indices was computed from the scanline reading table
+                # so if this f_index does not appear, it means there are n intersections
+                continue
 
             # Get all intersecting nodes, sorted from root to leaves
             # window for geom
@@ -426,7 +404,7 @@ class AggQuadTree(ZonalStatMethod):
             f_index_start = f_index_starts[f_index]
             f_index_end = (
                 f_index_starts[f_index + 1]
-                if f_index + 1 < n_features
+                if f_index + 1 < n_eff_features
                 else len(reading_table)
             )
             f_reading_table = reading_table[f_index_start:f_index_end]
@@ -454,8 +432,8 @@ class AggQuadTree(ZonalStatMethod):
                 #     print("Box: " + str(node.box.bounds))
                 #     print("Box: " + str((np.array(node.box.bounds) / 1e6).round(3)))
 
-                bounds = node.box.bounds
-                n_x0, n_y0, n_x1, n_y1 = bounds
+                # bounds = node.box.bounds
+                # n_x0, n_y0, n_x1, n_y1 = bounds
                 n_r0, n_r1, n_c0, n_c1 = node.pixel_bounds
                 # Debugging
                 # Mark in global mask
@@ -475,11 +453,11 @@ class AggQuadTree(ZonalStatMethod):
                 # c2 = min(global_mask.shape[1], c1 + w)
                 # if r1 < r2 and c1 < c2:
                 #     global_mask[r1:r2, c1:c2] = f_index + 1
-                used_nodes[f_index].append(node)
+                # used_nodes[f_index].append(node)
 
                 # ensure stats are correct
-                import rasterstats
-                assert rasterstats.zonal_stats(node.box, raster.name, stats="count")[0]['count'] == node.stats['count']
+                # import rasterstats
+                # assert rasterstats.zonal_stats(node.box, raster.name, stats="count")[0]['count'] == node.stats['count']
 
                 # End Debugging
 
@@ -644,78 +622,78 @@ class AggQuadTree(ZonalStatMethod):
 
                 # Debugging
 
-                step_reading_table = f_reading_table.copy()
-                # step_coord_table = f_coord_table.copy()
-                # add column indicating if it was outside_rows or new_entries
-                # was_outside = np.zeros(len(step_reading_table), dtype=bool)
-                # was_outside[:len(outside_rows)] = True
+                # step_reading_table = f_reading_table.copy()
+                # # step_coord_table = f_coord_table.copy()
+                # # add column indicating if it was outside_rows or new_entries
+                # # was_outside = np.zeros(len(step_reading_table), dtype=bool)
+                # # was_outside[:len(outside_rows)] = True
 
-                # sort new reading table by rows
-                # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
-                step_sort_idx = np.argsort(step_reading_table[:, 0])
-                step_reading_table = step_reading_table[step_sort_idx]
-                # step_coord_table = step_coord_table[step_sort_idx]
-                # was_outside = was_outside[step_sort_idx]
-                rows, row_starts = np.unique(step_reading_table[:, 0], return_index=True)
-                # yss = step_coord_table[:, 0]
-                # yss = yss[row_starts]
-                yss = (raster.transform * (np.zeros_like(rows), rows + 0.5))[1]
+                # # sort new reading table by rows
+                # # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
+                # step_sort_idx = np.argsort(step_reading_table[:, 0])
+                # step_reading_table = step_reading_table[step_sort_idx]
+                # # step_coord_table = step_coord_table[step_sort_idx]
+                # # was_outside = was_outside[step_sort_idx]
+                # rows, row_starts = np.unique(step_reading_table[:, 0], return_index=True)
+                # # yss = step_coord_table[:, 0]
+                # # yss = yss[row_starts]
+                # yss = (raster.transform * (np.zeros_like(rows), rows + 0.5))[1]
 
-                row_start, row_end = int(np.floor(window.row_off)), int(
-                    np.ceil(window.row_off + window.height)
-                )
-                col_start, col_end = int(np.floor(window.col_off)), int(
-                    np.ceil(window.col_off + window.width)
-                )
+                # row_start, row_end = int(np.floor(window.row_off)), int(
+                #     np.ceil(window.row_off + window.height)
+                # )
+                # col_start, col_end = int(np.floor(window.col_off)), int(
+                #     np.ceil(window.col_off + window.width)
+                # )
 
-                from raptorstats.debugutils import ref_mask_rasterstats, compare_stats, plot_mask_comparison
+                # from raptorstats.debugutils import ref_mask_rasterstats, compare_stats, plot_mask_comparison
                 
-                for i, row in enumerate(rows):
-                    start = row_starts[i]
-                    end = row_starts[i + 1] if i + 1 < len(row_starts) else len(step_reading_table)
-                    reading_line = step_reading_table[start:end]
+                # for i, row in enumerate(rows):
+                #     start = row_starts[i]
+                #     end = row_starts[i + 1] if i + 1 < len(row_starts) else len(step_reading_table)
+                #     reading_line = step_reading_table[start:end]
 
-                    min_col = np.min(reading_line[:, 1])
-                    max_col = np.max(reading_line[:, 2])
-                    reading_window = rio.windows.Window(
-                        col_off=min_col, row_off=row, width=max_col - min_col, height=1
-                    )
+                #     min_col = np.min(reading_line[:, 1])
+                #     max_col = np.max(reading_line[:, 2])
+                #     reading_window = rio.windows.Window(
+                #         col_off=min_col, row_off=row, width=max_col - min_col, height=1
+                #     )
 
-                    curr_y = yss[i]
-                    # if np.allclose(curr_y, 3851869.0157146556):
-                    print(f"Processing row {row} (y={curr_y})")
+                #     curr_y = yss[i]
+                #     # if np.allclose(curr_y, 3851869.0157146556):
+                #     print(f"Processing row {row} (y={curr_y})")
 
-                    # Does not handle nodata
-                    data = raster.read(1, window=reading_window, masked=True)
-                    if data.shape[0] == 0:
-                        continue
-                    data = data[0]
+                #     # Does not handle nodata
+                #     data = raster.read(1, window=reading_window, masked=True)
+                #     if data.shape[0] == 0:
+                #         continue
+                #     data = data[0]
 
-                    for j, col0, col1, f_index in reading_line:
-                        row_in_mask = row - row_start
-                        col0_in_mask = col0 - col_start
-                        col1_in_mask = col1 - col_start
-                        global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
-                        # if row == 512 or row == 479:
-                        #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
-                        # if not was_outside[i]:
-                        #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
-                        # else:
-                        #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
-                # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
+                #     for j, col0, col1, f_index in reading_line:
+                #         row_in_mask = row - row_start
+                #         col0_in_mask = col0 - col_start
+                #         col1_in_mask = col1 - col_start
+                #         global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+                #         # if row == 512 or row == 479:
+                #         #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
+                #         # if not was_outside[i]:
+                #         #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
+                #         # else:
+                #         #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
+                # # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
 
                 
-                ref_mask = ref_mask_rasterstats(features, raster, window)
-                print(f"Node Level: {node.level}")
-                # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=yss, idx=self.idx, used_nodes=used_nodes[f_index])
-                global_mask = np.zeros((H, W), dtype=int)  # reset global mask for next node
-                print('done')
+                # ref_mask = ref_mask_rasterstats(features, raster, window)
+                # print(f"Node Level: {node.level}")
+                # # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=yss, idx=self.idx, used_nodes=used_nodes[f_index])
+                # global_mask = np.zeros((H, W), dtype=int)  # reset global mask for next node
+                # print('done')
                 # End Debugging
             new_reading_table.append(f_reading_table)
-            new_coord_table.append(f_coord_table)
+            # new_coord_table.append(f_coord_table)
 
         new_reading_table = np.vstack(new_reading_table)
-        new_coord_table = np.vstack(new_coord_table)
+        # new_coord_table = np.vstack(new_coord_table)
         # sort new reading table by rows
         # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
         sort_idx = np.argsort(new_reading_table[:, 0])
@@ -727,67 +705,67 @@ class AggQuadTree(ZonalStatMethod):
         )
 
         # Debugging
-        rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
+        # rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
 
-        row_start, row_end = int(np.floor(window.row_off)), int(
-            np.ceil(window.row_off + window.height)
-        )
-        col_start, col_end = int(np.floor(window.col_off)), int(
-            np.ceil(window.col_off + window.width)
-        )
+        # row_start, row_end = int(np.floor(window.row_off)), int(
+        #     np.ceil(window.row_off + window.height)
+        # )
+        # col_start, col_end = int(np.floor(window.col_off)), int(
+        #     np.ceil(window.col_off + window.width)
+        # )
 
-        from raptorstats.debugutils import ref_mask_rasterstats, compare_stats, plot_mask_comparison
+        # from raptorstats.debugutils import ref_mask_rasterstats, compare_stats, plot_mask_comparison
 
-        diffs = compare_stats(self.results, self.raster.files[0], features, stats=self.stats, show_diff=True, precision=5)
+        # diffs = compare_stats(self.results, self.raster.files[0], features, stats=self.stats, show_diff=True, precision=5)
         
-        # diffs = []
-        if len(diffs) == 0:
-            print("No differences found!!!")
-            return self.results
-        diff_indices = [d['feature'] for d in diffs]
-        diff_features = features.iloc[diff_indices]
-        f_index_to_diff_features = { f: i for i, f in enumerate(diff_indices) }
+        # # diffs = []
+        # if len(diffs) == 0:
+        #     print("No differences found!!!")
+        #     return self.results
+        # diff_indices = [d['feature'] for d in diffs]
+        # diff_features = features.iloc[diff_indices]
+        # f_index_to_diff_features = { f: i for i, f in enumerate(diff_indices) }
 
-        for i, row in enumerate(rows):
-            start = row_starts[i]
-            end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
-            reading_line = reading_table[start:end]
+        # for i, row in enumerate(rows):
+        #     start = row_starts[i]
+        #     end = row_starts[i + 1] if i + 1 < len(row_starts) else len(reading_table)
+        #     reading_line = reading_table[start:end]
 
-            min_col = np.min(reading_line[:, 1])
-            max_col = np.max(reading_line[:, 2])
-            reading_window = rio.windows.Window(
-                col_off=min_col, row_off=row, width=max_col - min_col, height=1
-            )
+        #     min_col = np.min(reading_line[:, 1])
+        #     max_col = np.max(reading_line[:, 2])
+        #     reading_window = rio.windows.Window(
+        #         col_off=min_col, row_off=row, width=max_col - min_col, height=1
+        #     )
 
-            # Does not handle nodata
-            data = raster.read(1, window=reading_window, masked=True)
-            if data.shape[0] == 0:
-                continue
-            data = data[0]
+        #     # Does not handle nodata
+        #     data = raster.read(1, window=reading_window, masked=True)
+        #     if data.shape[0] == 0:
+        #         continue
+        #     data = data[0]
 
-            for j, col0, col1, f_index in reading_line:
-                row_in_mask = row - row_start
-                col0_in_mask = col0 - col_start
-                col1_in_mask = col1 - col_start
-                if len(diff_indices) > 0:
-                    if f_index in diff_indices:
-                        global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index_to_diff_features[f_index] + 1
-                else:
-                    global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+        #     for j, col0, col1, f_index in reading_line:
+        #         row_in_mask = row - row_start
+        #         col0_in_mask = col0 - col_start
+        #         col1_in_mask = col1 - col_start
+        #         if len(diff_indices) > 0:
+        #             if f_index in diff_indices:
+        #                 global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index_to_diff_features[f_index] + 1
+        #         else:
+        #             global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
 
-        global_mask = global_mask[:-1, :]  # remove the last row added for debugging
+        # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
 
         
-        ref_mask = ref_mask_rasterstats(diff_features if len(diff_indices) > 0 else features, raster, window)
-        diff_used_nodes = []
-        for di in diff_indices:
-            diff_used_nodes.append(used_nodes[di])
-        diff_used_nodes = [n for nlist in diff_used_nodes for n in nlist]
-        used_nodes= [ n for nlist in used_nodes for n in nlist ]
-        # used_nodes = []
-        print(diffs)
-        plot_mask_comparison(global_mask, ref_mask, diff_features if len(diff_indices) > 0 else features, raster.transform, window=window, scanlines=inter_ys, idx=self.idx, used_nodes=diff_used_nodes if len(diff_indices) >0 else used_nodes)
-        print('done')
+        # ref_mask = ref_mask_rasterstats(diff_features if len(diff_indices) > 0 else features, raster, window)
+        # diff_used_nodes = []
+        # for di in diff_indices:
+        #     diff_used_nodes.append(used_nodes[di])
+        # diff_used_nodes = [n for nlist in diff_used_nodes for n in nlist]
+        # used_nodes= [ n for nlist in used_nodes for n in nlist ]
+        # # used_nodes = []
+        # print(diffs)
+        # plot_mask_comparison(global_mask, ref_mask, diff_features if len(diff_indices) > 0 else features, raster.transform, window=window, scanlines=inter_ys, idx=self.idx, used_nodes=diff_used_nodes if len(diff_indices) >0 else used_nodes)
+        # print('done')
 
         # End Debugging code
 

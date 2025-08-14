@@ -99,6 +99,19 @@ class Stats:
     def __repr__(self):
         return f"StatsConfig(stats={self.stats}, categorical={self.categorical}, run_count={self.run_count})"
 
+    def empty(self):
+        """Return an empty stats dict with the requested keys."""
+        st = {s: np.nan for s in self.stats} if self.stats else {}
+        st["count"] = 0
+        if self.categorical:
+            st["histogram"] = {}
+        if "nodata" in self.stats:
+            st["nodata"] = 0
+        if "nan" in self.stats:
+            st["nan"] = 0
+        return st
+    
+
     def from_array(self, data: np.ma.MaskedArray) -> dict:
         """
         Compute the configured statistics on *data*.
@@ -324,7 +337,7 @@ class Stats:
                 if "median" in self.stats:
                     out["median"] = _quantile(vals=vals, cnts=cnts, q=0.5)
                 for q in self.percentiles:
-                    out[f"percentile_{int(q)}"] = _quantile(vals=vals, cnts=cnts, q=q)
+                    out[f"percentile_{int(q)}"] = _quantile(vals=vals, cnts=cnts, q=q / 100.0)
 
             if self.run_count:
                 if "unique" in self.stats:

@@ -35,17 +35,21 @@ def plot_mask_comparison(
     comp_1 = (global_mask == ref_mask) & (global_mask != 0)
     comp_2 = (global_mask != 0) & (ref_mask == 0)
     comp_3 = (global_mask == 0) & (ref_mask != 0)
+    comp_4 = (global_mask == -1)
+    comp_5 = (global_mask == -2)
     comparison[comp_1] = 1
     comparison[comp_2] = 2
     comparison[comp_3] = 3
+    comparison[comp_4] = 4  # global only, no ref
+    comparison[comp_5] = 5 
 
     # nothing to show?
     if comparison.max() == 0:
         print("⚠  comparison image is empty (all zeros)")
     # -----------------------------------------------------------------------
 
-    cmap = ListedColormap(["white", "gray", "blue", "red"])
-    norm = BoundaryNorm([0, 1, 2, 3, 4], cmap.N)
+    cmap = ListedColormap(["white", "gray", "blue", "red", "black", "yellow"])
+    norm = BoundaryNorm([0, 1, 2, 3, 4, 5], cmap.N)
 
     subset_transform = window_transform(window, transform)
     extent = plotting_extent(global_mask, transform=subset_transform)
