@@ -336,6 +336,7 @@ class AggQuadTree(ZonalStatMethod):
                     level=level,
                     max_depth=self.max_depth,
                     _box=shp_boxes[i],
+                    transform=raster.transform,
                     stats=aggregates[i],
                 )
                 idx.insert(ids[i], boxes_lvl[i], obj=node)
@@ -397,20 +398,10 @@ class AggQuadTree(ZonalStatMethod):
         partials = [[] for _ in range(n_features)]
 
         # Debugging
-        window = rio.features.geometry_window(
-            raster,
-            features.geometry,
-            # transform=transform,
-            pad_x=0.5,
-            pad_y=0.5,
-        )
-        w_height = int(np.ceil(window.height))
-        w_width = int(np.ceil(window.width))
-        global_mask = np.zeros((w_height+1, w_width), dtype=int)
-        inter_ys = coord_table[:, 0]
+        H, W = raster.height, raster.width
+        window = rio.windows.Window(0, 0, W, H).round_offsets().round_lengths()  # for plotting/ref
+        global_mask = np.zeros((H, W), dtype=int)  # global mask for debugging
         used_nodes = [[] for _ in range(n_features)]
-        subset_row0 = int(np.floor(window.row_off).clip(min=0))
-        subset_col0 = int(np.floor(window.col_off).clip(min=0))
         # End Debugging
 
         for f_index, geom in enumerate(features.geometry):
@@ -446,14 +437,13 @@ class AggQuadTree(ZonalStatMethod):
                 new_coord_table.append(f_coord_table)
                 continue
 
-            # if f_index == 25:
-            #     nnodes = [n for n in nodes if n.is_contained_in_geom(geom)]
-            #     bbx = [n.box for n in nnodes]
-            #     iids = [n.id for n in nnodes]
-            #     aags = []
-            #     piids = [n.parent_id for n in nnodes]
-            #     # test_plot(bbx, aags, piids, iids)
-            #     print(f"Feature index: {f_index}")
+            # Debugging
+            # put node 1 in position 0
+            # n1 = nodes[0]
+            # n0 = nodes[0]
+            # nodes[0] = nodes[1]
+            # nodes[1] = n0
+            # End Debugging
 
             for node in nodes:
 
@@ -466,137 +456,261 @@ class AggQuadTree(ZonalStatMethod):
 
                 bounds = node.box.bounds
                 n_x0, n_y0, n_x1, n_y1 = bounds
-
+                n_r0, n_r1, n_c0, n_c1 = node.pixel_bounds
                 # Debugging
                 # Mark in global mask
-                sq_win = rio.windows.from_bounds(
-                    n_x0, n_y0, n_x1, n_y1, transform=transform
-                )
-                sq_win = sq_win.round_offsets().round_lengths()
-                inter = rio.windows.intersection(sq_win, window)
-                # mark in global mask
-                loc_row0 = int(round(inter.row_off - subset_row0))
-                loc_col0 = int(round(inter.col_off - subset_col0))
-                h = int(round(inter.height))
-                w = int(round(inter.width))
-                # clamp just in case of tiny float fuzz
-                r1 = max(0, loc_row0); c1 = max(0, loc_col0)
-                r2 = min(global_mask.shape[0], r1 + h)
-                c2 = min(global_mask.shape[1], c1 + w)
-                if r1 < r2 and c1 < c2:
-                    global_mask[r1:r2, c1:c2] = f_index + 1
+
+                # sq_win = rio.windows.from_bounds(
+                #     n_x0, n_y0, n_x1, n_y1, transform=transform
+                # )
+                # sq_win = sq_win.round_offsets().round_lengths()
+                # inter = rio.windows.intersection(sq_win, window)
+                # # mark in global mask
+                # loc_row0 = int(round(inter.row_off - subset_row0))
+                # loc_col0 = int(round(inter.col_off - subset_col0))
+                # h = int(round(inter.height))
+                # w = int(round(inter.width))
+                # r1 = max(0, loc_row0); c1 = max(0, loc_col0)
+                # r2 = min(global_mask.shape[0], r1 + h)
+                # c2 = min(global_mask.shape[1], c1 + w)
+                # if r1 < r2 and c1 < c2:
+                #     global_mask[r1:r2, c1:c2] = f_index + 1
                 used_nodes[f_index].append(node)
+
                 # ensure stats are correct
                 import rasterstats
                 assert rasterstats.zonal_stats(node.box, raster.name, stats="count")[0]['count'] == node.stats['count']
+
                 # End Debugging
 
                 partials[f_index].append(node.stats)
 
-                ys = f_coord_table[:, 0]
-                x0s = f_coord_table[:, 1]
-                x1s = f_coord_table[:, 2]
+                # ys = f_coord_table[:, 0]
+                # x0s = f_coord_table[:, 1]
+                # x1s = f_coord_table[:, 2]
 
-                inside_y = (ys >= n_y0) & (ys <= n_y1)
-                inside_x = (x0s >= n_x0) & (x1s <= n_x1)
-                fully_inside = inside_y & inside_x
+                # inside_y = (ys >= n_y0) & (ys <= n_y1)
+                # inside_x = (x0s >= n_x0) & (x1s <= n_x1)
+                # fully_inside = inside_y & inside_x
+
+                rows = f_reading_table[:, 0]
+                col0s = f_reading_table[:, 1]
+                col1s = f_reading_table[:, 2]
+                fully_inside = (rows >= n_r0) & (rows < n_r1) & (col0s >= n_c0) & (col1s <= n_c1)
 
                 f_reading_table = f_reading_table[~fully_inside]
-                f_coord_table = f_coord_table[~fully_inside]
+                # f_coord_table = f_coord_table[~fully_inside]
 
-                ys = f_coord_table[:, 0]
-                x0s = f_coord_table[:, 1]
-                x1s = f_coord_table[:, 2]
+                # ys = f_coord_table[:, 0]
+                # x0s = f_coord_table[:, 1]
+                # x1s = f_coord_table[:, 2]
                 rows = f_reading_table[:, 0]
-                
+                col0s = f_reading_table[:, 1]
+                col1s = f_reading_table[:, 2]
+
                 f_idxs = f_reading_table[:, 3]
                 # y, x0, x1, rows, col0s, col1s, f_index
 
-                inside_y = (ys >= n_y0) & (ys <= n_y1)
-                overlaps_left = (x0s < n_x0) & (x1s > n_x0)  # crosses left edge
-                overlaps_right = (x1s > n_x1) & (x0s < n_x1)  # crosses right edge
-                overlaps_both = (x0s < n_x0) & (x1s > n_x1)  # crosses both sides
-                horizontally_intersect = (x0s < n_x1) & (x1s > n_x0)
+                # inside_y = (rows >= n_r0) & (rows < n_r1)
+                # horizontally_intersect = (col0s < n_c1) & (col1s > n_c0)
+                # overlaps_left  = inside_y & (col0s < n_c0) & (col1s > n_c0) & (col1s <= n_c1)
+                # overlaps_right = inside_y & (col0s >= n_c0) & (col0s < n_c1) & (col1s > n_c1)
+                # overlaps_both  = inside_y & (col0s < n_c0) & (col1s > n_c1)  # spans across both edges
 
                 new_entries = []
 
-                cut_left = (
-                    horizontally_intersect & (overlaps_left | overlaps_both) & inside_y
+                # cut_left = (
+                #     horizontally_intersect & (overlaps_left | overlaps_both) & inside_y
+                # )
+                # n_cut_left = np.sum(cut_left)
+                # if n_cut_left > 0:
+                #     new_entry_left = np.stack(
+                #         [
+                #             ys[cut_left], # y
+                #             x0s[cut_left],  # new x0 is the left border
+                #             np.ones(n_cut_left) * n_x0,
+                #             rows[cut_left],
+                #             -1 * np.ones(n_cut_left),  # col0 placeholder
+                #             -1 * np.ones(n_cut_left),  # col1 placeholder
+                #             f_idxs[cut_left],
+                #         ],
+                #         axis=1,
+                #     )
+                #     # new_entries.append(new_entry_left)
+                
+                Lmask = (rows >= n_r0) & (rows < n_r1) & (col0s < n_c0) & (col1s > n_c0)
+                if np.any(Lmask):
+                        l_rows = rows[Lmask]
+                        l_c0   = col0s[Lmask]
+                        l_c1   = np.minimum(col1s[Lmask], n_c0)  # cut at left edge
+                        keep   = l_c1 > l_c0                     # drop zero-length
+                        if np.any(keep):
+                            left_reading = np.stack(
+                                [l_rows[keep], l_c0[keep], l_c1[keep], f_idxs[Lmask][keep]],
+                                axis=1
+                            ).astype(int)
+                            new_entries.append(left_reading)
+
+                # cut_right = (
+                #     horizontally_intersect & (overlaps_right | overlaps_both) & inside_y
+                # )
+                # n_cut_right = np.sum(cut_right)
+                # if n_cut_right > 0:
+                #     new_entry_right = np.stack(
+                #         [
+                #             ys[cut_right],
+                #             np.ones(n_cut_right) * n_x1,  # new x0 is right border
+                #             x1s[cut_right],
+                #             rows[cut_right],
+                #             -1 * np.ones(n_cut_right),  # col0 placeholder
+                #             -1 * np.ones(n_cut_right),  # col1 placeholder
+                #             f_idxs[cut_right],
+                #         ],
+                #         axis=1,
+                #     )
+                #     # TODO: uncomment
+                #     # new_entries.append(new_entry_right)
+
+                # Right cut: segments crossing the node's right edge
+                Rmask = (rows >= n_r0) & (rows < n_r1) & (col1s > n_c1) & (col0s < n_c1)
+
+                if np.any(Rmask):
+                    r_rows = rows[Rmask]
+                    r_c0   = np.maximum(col0s[Rmask], n_c1)  # start at node's right edge
+                    r_c1   = col1s[Rmask]
+                    r_f    = f_idxs[Rmask]
+
+                    keep = r_c1 > r_c0  # drop zero-length pieces
+                    if np.any(keep):
+                        right_reading = np.stack(
+                            [r_rows[keep], r_c0[keep], r_c1[keep], r_f[keep]],
+                            axis=1
+                        ).astype(int)
+                        new_entries.append(right_reading)
+
+
+                # TODO: uncomment
+                # completely_outside = ~inside_y | ~horizontally_intersect
+                # outside_rows = f_reading_table[completely_outside]
+                # outside_coords = f_coord_table[completely_outside]
+
+                # if new_entries:
+                    
+                #     new_entries = np.vstack(new_entries)
+                #     new_entries_ys = new_entries[:, 0]
+                #     new_entries_x0s = new_entries[:, 1]
+                #     new_entries_x1s = new_entries[:, 2]
+                #     new_entries_f_index = new_entries[:, 6]
+                #     new_entries_rows = new_entries[:, 3]
+
+                #     new_coord_entries = np.stack([
+                #         new_entries_ys,
+                #         new_entries_x0s,
+                #         new_entries_x1s,
+                #     ], axis=1)
+                    
+                #     _, new_entries_col0s = xy_to_rowcol(new_entries_x0s, new_entries_ys, raster.transform)
+                #     _, new_entries_col1s = xy_to_rowcol(new_entries_x1s, new_entries_ys, raster.transform)
+                    
+                #     new_reading_table_entries = np.stack([
+                #             new_entries_rows,
+                #             new_entries_col0s,
+                #             new_entries_col1s,
+                #             new_entries_f_index,
+                #         ], axis=1).astype(int)
+                    
+                #     # TODO: uncomment
+                #     # f_reading_table = np.vstack([outside_rows, new_reading_table_entries])
+                #     # f_coord_table = np.vstack([outside_coords, new_coord_entries])
+                #     f_reading_table = outside_rows
+                #     f_coord_table = outside_coords
+
+                # else:
+                #     f_reading_table = outside_rows
+                #     f_coord_table = outside_coords
+                inside_rows   = (rows >= n_r0) & (rows < n_r1)
+                outside_mask  = (~inside_rows) | (col1s <= n_c0) | (col0s >= n_c1)
+
+                outside_rows = f_reading_table[outside_mask]
+
+                # merge: outside + any left/right pieces collected in new_entries
+                parts = [outside_rows]
+                for part in new_entries:
+                    if part is not None and part.size:
+                        # ensure int dtype and 2D shape
+                        parts.append(part.astype(int, copy=False).reshape(-1, 4))
+
+                f_reading_table = np.vstack(parts) if len(parts) > 1 else outside_rows
+
+                # Debugging
+
+                step_reading_table = f_reading_table.copy()
+                # step_coord_table = f_coord_table.copy()
+                # add column indicating if it was outside_rows or new_entries
+                # was_outside = np.zeros(len(step_reading_table), dtype=bool)
+                # was_outside[:len(outside_rows)] = True
+
+                # sort new reading table by rows
+                # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
+                step_sort_idx = np.argsort(step_reading_table[:, 0])
+                step_reading_table = step_reading_table[step_sort_idx]
+                # step_coord_table = step_coord_table[step_sort_idx]
+                # was_outside = was_outside[step_sort_idx]
+                rows, row_starts = np.unique(step_reading_table[:, 0], return_index=True)
+                # yss = step_coord_table[:, 0]
+                # yss = yss[row_starts]
+                yss = (raster.transform * (np.zeros_like(rows), rows + 0.5))[1]
+
+                row_start, row_end = int(np.floor(window.row_off)), int(
+                    np.ceil(window.row_off + window.height)
                 )
-                n_cut_left = np.sum(cut_left)
-                if n_cut_left > 0:
-                    new_entry_left = np.stack(
-                        [
-                            ys[cut_left], # y
-                            x0s[cut_left],  # new x0 is the left border
-                            np.ones(n_cut_left) * n_x0,
-                            rows[cut_left],
-                            -1 * np.ones(n_cut_left),  # col0 placeholder
-                            -1 * np.ones(n_cut_left),  # col1 placeholder
-                            f_idxs[cut_left],
-                        ],
-                        axis=1,
-                    )
-                    new_entries.append(new_entry_left)
-
-                cut_right = (
-                    horizontally_intersect & (overlaps_right | overlaps_both) & inside_y
+                col_start, col_end = int(np.floor(window.col_off)), int(
+                    np.ceil(window.col_off + window.width)
                 )
-                n_cut_right = np.sum(cut_right)
-                if n_cut_right > 0:
-                    new_entry_right = np.stack(
-                        [
-                            ys[cut_right],
-                            np.ones(n_cut_right) * n_x1,  # new x0 is right border
-                            x1s[cut_right],
-                            rows[cut_right],
-                            -1 * np.ones(n_cut_right),  # col0 placeholder
-                            -1 * np.ones(n_cut_right),  # col1 placeholder
-                            f_idxs[cut_right],
-                        ],
-                        axis=1,
+
+                from raptorstats.debugutils import ref_mask_rasterstats, compare_stats, plot_mask_comparison
+                
+                for i, row in enumerate(rows):
+                    start = row_starts[i]
+                    end = row_starts[i + 1] if i + 1 < len(row_starts) else len(step_reading_table)
+                    reading_line = step_reading_table[start:end]
+
+                    min_col = np.min(reading_line[:, 1])
+                    max_col = np.max(reading_line[:, 2])
+                    reading_window = rio.windows.Window(
+                        col_off=min_col, row_off=row, width=max_col - min_col, height=1
                     )
-                    new_entries.append(new_entry_right)
 
-                completely_outside = ~inside_y | ~horizontally_intersect
-                outside_rows = f_reading_table[completely_outside]
-                outside_coords = f_coord_table[completely_outside]
+                    curr_y = yss[i]
+                    # if np.allclose(curr_y, 3851869.0157146556):
+                    print(f"Processing row {row} (y={curr_y})")
 
-                if new_entries:
-                    
-                    new_entries = np.vstack(new_entries)
-                    new_entries_ys = new_entries[:, 0]
-                    new_entries_x0s = new_entries[:, 1]
-                    new_entries_x1s = new_entries[:, 2]
-                    new_entries_f_index = new_entries[:, 6]
-                    new_entries_rows = new_entries[:, 3]
+                    # Does not handle nodata
+                    data = raster.read(1, window=reading_window, masked=True)
+                    if data.shape[0] == 0:
+                        continue
+                    data = data[0]
 
-                    new_coord_entries = np.stack([
-                        new_entries_ys,
-                        new_entries_x0s,
-                        new_entries_x1s,
-                    ], axis=1)
-                    
-                    _, new_entries_col0s = xy_to_rowcol(new_entries_x0s, new_entries_ys, raster.transform)
-                    _, new_entries_col1s = xy_to_rowcol(new_entries_x1s, new_entries_ys, raster.transform)
-                    
-                    new_reading_table_entries = np.stack([
-                            new_entries_rows,
-                            new_entries_col0s,
-                            new_entries_col1s,
-                            new_entries_f_index,
-                        ], axis=1).astype(int)
-                    
-                    f_reading_table = np.vstack([outside_rows, new_reading_table_entries])
-                    f_coord_table = np.vstack([outside_coords, new_coord_entries])
+                    for j, col0, col1, f_index in reading_line:
+                        row_in_mask = row - row_start
+                        col0_in_mask = col0 - col_start
+                        col1_in_mask = col1 - col_start
+                        global_mask[row_in_mask, col0_in_mask:col1_in_mask] = f_index + 1
+                        # if row == 512 or row == 479:
+                        #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
+                        # if not was_outside[i]:
+                        #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
+                        # else:
+                        #     global_mask[row_in_mask, col0_in_mask:col1_in_mask] = -1
+                # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
 
-                else:
-                    f_reading_table = outside_rows
-                    f_coord_table = outside_coords
-
-                # if f_index == 25:
-                #     print(25)
-
+                
+                ref_mask = ref_mask_rasterstats(features, raster, window)
+                print(f"Node Level: {node.level}")
+                # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=yss, idx=self.idx, used_nodes=used_nodes[f_index])
+                global_mask = np.zeros((H, W), dtype=int)  # reset global mask for next node
+                print('done')
+                # End Debugging
             new_reading_table.append(f_reading_table)
             new_coord_table.append(f_coord_table)
 
@@ -606,7 +720,7 @@ class AggQuadTree(ZonalStatMethod):
         # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
         sort_idx = np.argsort(new_reading_table[:, 0])
         reading_table = new_reading_table[sort_idx]
-        coord_table = new_coord_table[sort_idx]
+        # coord_table = new_coord_table[sort_idx]
         
         self.results = process_reading_table(
             reading_table, features, raster, self.stats, partials=partials
@@ -626,7 +740,10 @@ class AggQuadTree(ZonalStatMethod):
 
         diffs = compare_stats(self.results, self.raster.files[0], features, stats=self.stats, show_diff=True, precision=5)
         
-        diffs = []
+        # diffs = []
+        if len(diffs) == 0:
+            print("No differences found!!!")
+            return self.results
         diff_indices = [d['feature'] for d in diffs]
         diff_features = features.iloc[diff_indices]
         f_index_to_diff_features = { f: i for i, f in enumerate(diff_indices) }
