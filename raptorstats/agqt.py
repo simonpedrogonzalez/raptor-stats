@@ -50,23 +50,20 @@ class AggQuadTree(ZonalStatMethod):
 
         if intersection_coords.size == 0:
             reading_table = np.empty((0, 7), dtype=int)
-            coord_table = np.empty((0, 3), dtype=float)
             f_index_starts = np.array([], dtype=int)
             unique_f_indices = np.array([], dtype=int)
             self._reading_table = reading_table
-            self._coord_table = coord_table
             self.f_index_starts = f_index_starts
             self.unique_f_indices = unique_f_indices
             self.n_features = len(features.geometry)
             self.effective_n_features = 0
             return
 
-        reading_table, coord_table = build_reading_table(
-            f_index, intersection_coords, raster, return_coordinates=True, sort_by_feature=True
+        reading_table = build_reading_table(
+            f_index, intersection_coords, raster, return_coordinates=False, sort_by_feature=True
         )
 
         self._reading_table = reading_table # row, col0, col1, f_index
-        self._coord_table = coord_table # y, x0, x1
         unique_f_indices, f_index_starts = np.unique(reading_table[:, 3], return_index=True)
         self.f_index_starts = f_index_starts
         self.unique_f_indices = unique_f_indices
@@ -265,7 +262,6 @@ class AggQuadTree(ZonalStatMethod):
         self._precomputations(features, raster)
 
         reading_table = self._reading_table
-        coord_table = self._coord_table
         f_index_starts = self.f_index_starts
         n_features = self.n_features
         n_eff_features = self.effective_n_features
@@ -275,7 +271,6 @@ class AggQuadTree(ZonalStatMethod):
             return [self.stats.empty() for _ in range(n_features)]
         
         new_reading_table = []
-        new_coord_table = []
         partials = [[] for _ in range(n_features)]
 
         # Debugging
@@ -315,11 +310,9 @@ class AggQuadTree(ZonalStatMethod):
                 else len(reading_table)
             )
             f_reading_table = reading_table[f_index_start:f_index_end]
-            f_coord_table = coord_table[f_index_start:f_index_end]
 
             if len(nodes) == 0:
                 new_reading_table.append(f_reading_table)
-                new_coord_table.append(f_coord_table)
                 continue
 
             # Debugging
