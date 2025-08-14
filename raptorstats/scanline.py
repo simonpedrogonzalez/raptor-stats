@@ -2,8 +2,6 @@ import geopandas as gpd
 import numpy as np
 
 # Debugging code
-from raptorstats.debugutils import plot_mask_comparison, ref_mask_rasterstats, compare_stats
-import matplotlib.pyplot as plt
 # End Debugging code
 import rasterio as rio
 import shapely
