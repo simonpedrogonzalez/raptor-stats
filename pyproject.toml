@@ -33,5 +33,19 @@ dev = [
     "isort>=6.0.1",
     "black>=25.1.0",
     "docformatter>=1.7.7",
-    "pydocstyle>=6.3.0"
+    "pydocstyle>=6.3.0",
+    "m2r>=0.3.1",
+    "sphinx>=8.2.3",
+    "sphinx_rtd_theme>=3.0.2",
+    "build>=1.3.0",
 ]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# defaults to .
+
+[tool.setuptools.packages.find]
+include = ["raptorstats*"]

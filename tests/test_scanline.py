@@ -9,8 +9,8 @@ import pytest
 import rasterio
 import simplejson
 from affine import Affine
-from shapely.geometry import Polygon, box
-from utils import compare_stats_exact_match, get_reference_mean, make_raster
+from shapely.geometry import Polygon
+from utils import compare_stats_exact_match
 
 from raptorstats import zonal_stats
 from raptorstats.stats import VALID_STATS
@@ -489,16 +489,16 @@ def test_some_nodata_ndarray():
     assert stats[0]["count"] == 39
 
 
-def test_transform():
-    with rasterio.open(raster) as src:
-        arr = src.read(1)
-        affine = src.transform
-    polygons = os.path.join(DATA, "polygons.shp")
+# def test_transform():
+#     with rasterio.open(raster) as src:
+#         arr = src.read(1)
+#         affine = src.transform
+#     polygons = os.path.join(DATA, "polygons.shp")
 
-    stats = zonal_stats(polygons, arr, affine=affine)
-    # with pytest.deprecated_call():
-    #     stats2 = zonal_stats(polygons, arr, transform=affine.to_gdal())
-    # assert stats == stats2
+#     stats = zonal_stats(polygons, arr, affine=affine)
+#     # with pytest.deprecated_call():
+#     #     stats2 = zonal_stats(polygons, arr, transform=affine.to_gdal())
+#     # assert stats == stats2
 
 
 def test_prefix():

@@ -3,13 +3,11 @@ import json
 import os
 import sys
 
-import geopandas as gpd
 import numpy as np
 import pytest
 import rasterio
-import simplejson
 from affine import Affine
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon
 from utils import compare_stats_exact_match, compute_file_hash
 from raptorstats.agqt import AggQuadTree
 from raptorstats.io import open_raster, open_vector

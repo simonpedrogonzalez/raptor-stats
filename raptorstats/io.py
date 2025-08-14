@@ -155,6 +155,7 @@ def open_vector(
 ) -> gpd.GeoDataFrame:
     """Normalise *vectors* into a GeoDataFrame.
 
+    
     Parameters
     ----------
     vectors   : many flavours, see type hint above.
@@ -162,13 +163,12 @@ def open_vector(
     crs       : CRS to assign if the input has none (e.g. Shapely geom).
     affine    : Affine of the *raster* (optional).  If crs is None and you
                 pass an Affine with EPSG info (pyproj 3.6+ Affine.crs), that
-                CRS will be used.
+                CRS will be used. But don't quote me on that, this might fail.
 
     Returns
     -------
     gdf : GeoDataFrame
         Always contains at least a 'geometry' column and a CRS.
-        The caller can attach extra attributes with `gdf.attrs[...]`.
 
     """
 

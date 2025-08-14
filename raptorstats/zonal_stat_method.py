@@ -1,6 +1,4 @@
 import geopandas as gpd
-import line_profiler
-import numpy as np
 import rasterio as rio
 from rasterio.features import geometry_window
 

@@ -1,36 +1,31 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+# -- Path setup --------------------------------------------------------------
+import os, sys
+sys.path.insert(0, os.path.abspath(".."))
 
-# -- Project information -----------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+# -- Project info ------------------------------------------------------------
+project = "raptorstats"
+author = "Simon Gonzalez"
+language = "en"
 
-project = 'raptorstats'
-copyright = '2025, Simon Gonzalez'
-author = 'Simon Gonzalez'
-
-# -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-
+# -- Extensions --------------------------------------------------------------
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.todo',
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.todo",
 ]
 
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+autosummary_generate = True
+napoleon_numpy_docstring = True
+napoleon_google_docstring = False
 
-language = 'en'
+# mock heavy deps if needed
+autodoc_mock_imports = ["rasterio", "geopandas", "shapely", "rtree", "rasterstats"]
 
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
+templates_path = ["_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
-html_theme = 'alabaster'
-html_static_path = ['_static']
-
-# -- Options for todo extension ----------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/extensions/todo.html#configuration
-
+html_theme = "sphinx_rtd_theme"
+html_static_path = ["_static"]
 todo_include_todos = True

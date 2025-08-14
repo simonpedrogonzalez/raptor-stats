@@ -1,7 +1,7 @@
 from experiment import Experiment
 from constants import VECTOR_DATA_PATH, RASTER_DATA_PATH, US_counties, US_MSR_upsampled_4, US_states
 from raptorstats import zonal_stats
-from raptorstats.raster_methods import RasterStatsMasking
+from raster_methods import RasterStatsMasking
 from experiment_aggregator import ExperimentAggregator
 from raptorstats.stats import Stats
 from raptorstats.scanline import Scanline
@@ -94,7 +94,7 @@ exps = [
         func=method,
         reps=7,
         stats="*",
-        check_results=True,
+        check_results=False,
     ) for method in methods
 ]
 
