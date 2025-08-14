@@ -42,88 +42,10 @@ class AggQuadTree(ZonalStatMethod):
     def _get_params(self):
         return {"max_depth": self.max_depth, "index_path": self.index_path}
 
-    # def _get_index_path(self):
-        # raster_file_name = self.raster_file_path.split("/")[-1]
-        # raster_base_name = os.path.splitext(raster_file_name)[0]
-        # max_depth = self.max_depth
-    
-        # index_path = os.path.join(
-            # self.index_path, f"index_{raster_base_name}_depth_{max_depth}"
-        # )
-        # return index_path
-
     def _compute_scanline_reading_table(
         self, features: gpd.GeoDataFrame, raster: rio.DatasetReader
     ):
 
-        # transform = raster.transform
-
-        # def rows_to_ys(rows):
-        #     return (transform * (0, rows + 0.5))[1]
-
-        # def rowcol_to_xy(rows, cols):
-        #     # coords of pixel centers
-        #     xs, ys = transform * (cols + 0.5, rows + 0.5)
-        #     return xs, ys
-
-        # def xy_to_rowcol(xs, ys):
-        #     # pixel in which the point is located
-        #     cols, rows = (~transform) * (xs, ys)
-        #     return np.floor(rows).astype(int), np.floor(cols).astype(int)
-
-        # # get window for the entire features, that is, the bounding box for all features
-        # window = rio.windows.from_bounds(*features.total_bounds, transform=transform)
-
-        # row_start, row_end = int(np.floor(window.row_off)), int(
-        #     np.ceil(window.row_off + window.height)
-        # )
-        # col_start, col_end = int(np.floor(window.col_off)), int(
-        #     np.ceil(window.col_off + window.width)
-        # )
-
-        # x0 = (raster.transform * (col_start - 1, 0))[0]
-        # x1 = (raster.transform * (col_end, 0))[0]
-        # all_rows = np.arange(row_start, row_end + 1)
-        # ys = rows_to_ys(all_rows)
-
-        # x0s = np.full_like(ys, x0, dtype=float)
-        # x1s = np.full_like(ys, x1, dtype=float)
-
-        # # all points defining the scanlines
-        # all_points = np.stack(
-        #     [np.stack([x0s, ys], axis=1), np.stack([x1s, ys], axis=1)], axis=1
-        # )
-
-        # scanlines = MultiLineString(list(all_points))
-        # all_intersections = scanlines.intersection(features.geometry)
-
-        # intersection_table = []
-        # for f_index, inter in enumerate(all_intersections):
-        #     for ml in inter.geoms:
-        #         # f_index, y, x0, x1, (space for row, col1,col2)
-        #         coords = np.asarray(ml.coords)
-        #         y_ = coords[0][1]
-        #         x0 = coords[0][0]
-        #         x1 = coords[-1][0]
-        #         intersection_table.append((f_index, y_, x0, x1))
-
-        # intersection_table = np.array(intersection_table)
-        # inter_x0s = intersection_table[:, 2]
-        # inter_x1s = intersection_table[:, 3]
-        # inter_ys = intersection_table[:, 1]
-        # f_index = intersection_table[:, 0]
-
-        # rows, col0s = xy_to_rowcol(inter_x0s, inter_ys)
-        # _, col1s = xy_to_rowcol(inter_x1s, inter_ys)
-        # reading_table = np.stack(
-        #     [inter_ys, inter_x0s, inter_x1s, rows, col0s, col1s, f_index], axis=1
-        # ).astype(int)
-
-        # sort_idx = np.lexsort((rows, f_index))
-        # reading_table = reading_table[sort_idx]
-        # unique_f_indices, f_index_starts = np.unique(
-        #     reading_table[:, 6], return_index=True
-        # )
         f_index, intersection_coords = build_intersection_table(features, raster)
 
         if intersection_coords.size == 0:
@@ -221,7 +143,7 @@ class AggQuadTree(ZonalStatMethod):
             for k in range(len(uniq)):
                 s = starts[k]
                 e = starts[k+1] if k+1 < len(uniq) else len(keys)
-                g = boxes[s:e]  # children group (≤4 tiles; at edges could be <4 if div was odd, but here div is power of 2)
+                g = boxes[s:e]
                 # union bounds
                 out_boxes[k, 0] = np.min(g[:, 0])  # left
                 out_boxes[k, 1] = np.min(g[:, 1])  # bottom
@@ -230,9 +152,6 @@ class AggQuadTree(ZonalStatMethod):
                 out_ix[k] = pix[s]
                 out_iy[k] = piy[s]
             return out_boxes, out_ix, out_iy
-        # def get_boxes_intermediate()
-
-        x_min, y_min, x_max, y_max = raster.bounds
 
         n_pixels_width = raster.width
         n_pixels_height = raster.height
@@ -247,7 +166,7 @@ class AggQuadTree(ZonalStatMethod):
         idx = index.Index(self.index_path)
         all_nodes = []
 
-        # Build **leaf** level once
+        # Build leaf level
         level = self.max_depth
         divisions = 2**level
         boxes, ix, iy = get_boxes_aligned_even(divisions, raster)
@@ -255,11 +174,10 @@ class AggQuadTree(ZonalStatMethod):
         previous_aggregates = None
         previous_parent_ids = None
 
-        # Iterate from leaves up to root, coarsening each time
+        # Iterate from leaves up to root, coarsening
         for level in range(self.max_depth, -1, -1):
             divisions = 2**level
 
-            # z-order + stable sort for this level
             z_indices = z_order_indices(ix, iy)
             sort_idx = np.argsort(z_indices)
             boxes_lvl = boxes[sort_idx]
@@ -275,7 +193,7 @@ class AggQuadTree(ZonalStatMethod):
             if level == 0:
                 parent_ids = np.array([-1])
             else:
-                parent_ids = (z_lvl // 4) + box_index  # parent ids live in the *next* chunk
+                parent_ids = (z_lvl // 4) + box_index  # parent ids live in the next chunk
 
             if level == self.max_depth:
                 # Compute aggregates only once (on leaves)
@@ -296,7 +214,7 @@ class AggQuadTree(ZonalStatMethod):
 
             # Emit nodes for this level
             for i in range(n_boxes):
-                node = Node(
+                node = Node( # Node computes pixel_bounds from box and transform
                     _id=ids[i],
                     parent_id=parent_ids[i] if level > 0 else -1,
                     level=level,
@@ -308,9 +226,10 @@ class AggQuadTree(ZonalStatMethod):
                 idx.insert(ids[i], boxes_lvl[i], obj=node)
                 all_nodes.append(node)
 
-            # Prepare **parent** level boxes by unioning children bounds
+            # Prepare parent level boxes by unioning children bounds
             if level > 0:
                 boxes, ix, iy = coarsen_from_children(boxes_lvl, ix_lvl, iy_lvl, divisions)
+        
         self.idx = idx
 
     def _load_quad_tree(self):
@@ -355,16 +274,6 @@ class AggQuadTree(ZonalStatMethod):
             # No intersections found, return empty stats
             return [self.stats.empty() for _ in range(n_features)]
         
-        # transform = raster.transform
-
-        # def xy_to_rowcol(xs, ys, transform):
-        #     cols, rows = (~transform) * (xs, ys)
-
-        #     rows = np.floor(rows).astype(int).clip(min=0)
-        #     cols = np.ceil(cols - 0.5).astype(int).clip(min=0)   # left-inclusive
-        #     # cols = np.round(cols).astype(int).clip(min=0)
-        #     return rows, cols
-
         new_reading_table = []
         new_coord_table = []
         partials = [[] for _ in range(n_features)]
@@ -379,7 +288,7 @@ class AggQuadTree(ZonalStatMethod):
         for f_index, geom in enumerate(features.geometry):
 
             if f_index not in self.unique_f_indices:
-                # skip features that do not have any intersections
+                # Skip features that do not have any intersections
                 # self.unique_f_indices was computed from the scanline reading table
                 # so if this f_index does not appear, it means there are n intersections
                 continue
@@ -387,7 +296,6 @@ class AggQuadTree(ZonalStatMethod):
             # Get all intersecting nodes, sorted from root to leaves
             # window for geom
             window_bounds = geom.bounds
-            # window_bounds = rio.windows.bounds(window, raster.transform)
             nodes = list(self.idx.intersection(window_bounds, objects=True))[::-1]
             nodes = [node.object for node in nodes] # TODO: one liner
             nodes = [node for node in nodes if node.is_contained_in_geom(geom)]
@@ -399,7 +307,6 @@ class AggQuadTree(ZonalStatMethod):
                     without_children.append(n)
 
             nodes = without_children
-            # node_copy = nodes.copy()
 
             f_index_start = f_index_starts[f_index]
             f_index_end = (
@@ -425,16 +332,8 @@ class AggQuadTree(ZonalStatMethod):
 
             for node in nodes:
 
-                # if f_index == 25:
-                #     print("Node: " + str(node.id))
-                #     print("Parent: " + str(node.parent_id))
-                #     print("Level: " + str(node.level))
-                #     print("Box: " + str(node.box.bounds))
-                #     print("Box: " + str((np.array(node.box.bounds) / 1e6).round(3)))
-
-                # bounds = node.box.bounds
-                # n_x0, n_y0, n_x1, n_y1 = bounds
                 n_r0, n_r1, n_c0, n_c1 = node.pixel_bounds
+
                 # Debugging
                 # Mark in global mask
 
@@ -461,67 +360,38 @@ class AggQuadTree(ZonalStatMethod):
 
                 # End Debugging
 
+                # Add the partials of this node
                 partials[f_index].append(node.stats)
-
-                # ys = f_coord_table[:, 0]
-                # x0s = f_coord_table[:, 1]
-                # x1s = f_coord_table[:, 2]
-
-                # inside_y = (ys >= n_y0) & (ys <= n_y1)
-                # inside_x = (x0s >= n_x0) & (x1s <= n_x1)
-                # fully_inside = inside_y & inside_x
 
                 rows = f_reading_table[:, 0]
                 col0s = f_reading_table[:, 1]
                 col1s = f_reading_table[:, 2]
                 fully_inside = (rows >= n_r0) & (rows < n_r1) & (col0s >= n_c0) & (col1s <= n_c1)
-
+                
+                # Remove fully inside strips, as they are already accounted for
+                # by the node
                 f_reading_table = f_reading_table[~fully_inside]
-                # f_coord_table = f_coord_table[~fully_inside]
 
-                # ys = f_coord_table[:, 0]
-                # x0s = f_coord_table[:, 1]
-                # x1s = f_coord_table[:, 2]
                 rows = f_reading_table[:, 0]
                 col0s = f_reading_table[:, 1]
                 col1s = f_reading_table[:, 2]
 
                 f_idxs = f_reading_table[:, 3]
-                # y, x0, x1, rows, col0s, col1s, f_index
-
-                # inside_y = (rows >= n_r0) & (rows < n_r1)
-                # horizontally_intersect = (col0s < n_c1) & (col1s > n_c0)
-                # overlaps_left  = inside_y & (col0s < n_c0) & (col1s > n_c0) & (col1s <= n_c1)
-                # overlaps_right = inside_y & (col0s >= n_c0) & (col0s < n_c1) & (col1s > n_c1)
-                # overlaps_both  = inside_y & (col0s < n_c0) & (col1s > n_c1)  # spans across both edges
 
                 new_entries = []
 
-                # cut_left = (
-                #     horizontally_intersect & (overlaps_left | overlaps_both) & inside_y
-                # )
-                # n_cut_left = np.sum(cut_left)
-                # if n_cut_left > 0:
-                #     new_entry_left = np.stack(
-                #         [
-                #             ys[cut_left], # y
-                #             x0s[cut_left],  # new x0 is the left border
-                #             np.ones(n_cut_left) * n_x0,
-                #             rows[cut_left],
-                #             -1 * np.ones(n_cut_left),  # col0 placeholder
-                #             -1 * np.ones(n_cut_left),  # col1 placeholder
-                #             f_idxs[cut_left],
-                #         ],
-                #         axis=1,
-                #     )
-                #     # new_entries.append(new_entry_left)
-                
+                # Left cut: segments or strips crossing the node's left edge
+                # includes both the strips only crossing the left edge
+                # and segments crossing both the left and right edges
                 Lmask = (rows >= n_r0) & (rows < n_r1) & (col0s < n_c0) & (col1s > n_c0)
+
                 if np.any(Lmask):
                         l_rows = rows[Lmask]
                         l_c0   = col0s[Lmask]
-                        l_c1   = np.minimum(col1s[Lmask], n_c0)  # cut at left edge
-                        keep   = l_c1 > l_c0                     # drop zero-length
+                        l_c1   = np.minimum(col1s[Lmask], n_c0) # cut at left edge
+                        keep   = l_c1 > l_c0 # drop zero-length
+                        # "Cut" the left edge, creating a new shorter segment in the left part
+                        # that ends at the node's left edge
                         if np.any(keep):
                             left_reading = np.stack(
                                 [l_rows[keep], l_c0[keep], l_c1[keep], f_idxs[Lmask][keep]],
@@ -529,27 +399,9 @@ class AggQuadTree(ZonalStatMethod):
                             ).astype(int)
                             new_entries.append(left_reading)
 
-                # cut_right = (
-                #     horizontally_intersect & (overlaps_right | overlaps_both) & inside_y
-                # )
-                # n_cut_right = np.sum(cut_right)
-                # if n_cut_right > 0:
-                #     new_entry_right = np.stack(
-                #         [
-                #             ys[cut_right],
-                #             np.ones(n_cut_right) * n_x1,  # new x0 is right border
-                #             x1s[cut_right],
-                #             rows[cut_right],
-                #             -1 * np.ones(n_cut_right),  # col0 placeholder
-                #             -1 * np.ones(n_cut_right),  # col1 placeholder
-                #             f_idxs[cut_right],
-                #         ],
-                #         axis=1,
-                #     )
-                #     # TODO: uncomment
-                #     # new_entries.append(new_entry_right)
-
                 # Right cut: segments crossing the node's right edge
+                # includes both the strips only crossing the right edge
+                # and segments crossing both the left and right edges
                 Rmask = (rows >= n_r0) & (rows < n_r1) & (col1s > n_c1) & (col0s < n_c1)
 
                 if np.any(Rmask):
@@ -557,7 +409,8 @@ class AggQuadTree(ZonalStatMethod):
                     r_c0   = np.maximum(col0s[Rmask], n_c1)  # start at node's right edge
                     r_c1   = col1s[Rmask]
                     r_f    = f_idxs[Rmask]
-
+                    # "Cut" the right edge, creating a new shorter segment in the right part
+                    # that starts at the node's right edge
                     keep = r_c1 > r_c0  # drop zero-length pieces
                     if np.any(keep):
                         right_reading = np.stack(
@@ -566,52 +419,14 @@ class AggQuadTree(ZonalStatMethod):
                         ).astype(int)
                         new_entries.append(right_reading)
 
-
-                # TODO: uncomment
-                # completely_outside = ~inside_y | ~horizontally_intersect
-                # outside_rows = f_reading_table[completely_outside]
-                # outside_coords = f_coord_table[completely_outside]
-
-                # if new_entries:
-                    
-                #     new_entries = np.vstack(new_entries)
-                #     new_entries_ys = new_entries[:, 0]
-                #     new_entries_x0s = new_entries[:, 1]
-                #     new_entries_x1s = new_entries[:, 2]
-                #     new_entries_f_index = new_entries[:, 6]
-                #     new_entries_rows = new_entries[:, 3]
-
-                #     new_coord_entries = np.stack([
-                #         new_entries_ys,
-                #         new_entries_x0s,
-                #         new_entries_x1s,
-                #     ], axis=1)
-                    
-                #     _, new_entries_col0s = xy_to_rowcol(new_entries_x0s, new_entries_ys, raster.transform)
-                #     _, new_entries_col1s = xy_to_rowcol(new_entries_x1s, new_entries_ys, raster.transform)
-                    
-                #     new_reading_table_entries = np.stack([
-                #             new_entries_rows,
-                #             new_entries_col0s,
-                #             new_entries_col1s,
-                #             new_entries_f_index,
-                #         ], axis=1).astype(int)
-                    
-                #     # TODO: uncomment
-                #     # f_reading_table = np.vstack([outside_rows, new_reading_table_entries])
-                #     # f_coord_table = np.vstack([outside_coords, new_coord_entries])
-                #     f_reading_table = outside_rows
-                #     f_coord_table = outside_coords
-
-                # else:
-                #     f_reading_table = outside_rows
-                #     f_coord_table = outside_coords
+                # Keep everything that is outside the node as is
+                # outside means up and down the node, or completely
+                # starting and ending to the left or right of the node
                 inside_rows   = (rows >= n_r0) & (rows < n_r1)
                 outside_mask  = (~inside_rows) | (col1s <= n_c0) | (col0s >= n_c1)
-
                 outside_rows = f_reading_table[outside_mask]
 
-                # merge: outside + any left/right pieces collected in new_entries
+                # merge: outside + any left/right pieces
                 parts = [outside_rows]
                 for part in new_entries:
                     if part is not None and part.size:
@@ -688,17 +503,14 @@ class AggQuadTree(ZonalStatMethod):
                 # # plot_mask_comparison(global_mask, ref_mask, features, raster.transform, window=window, scanlines=yss, idx=self.idx, used_nodes=used_nodes[f_index])
                 # global_mask = np.zeros((H, W), dtype=int)  # reset global mask for next node
                 # print('done')
+
                 # End Debugging
             new_reading_table.append(f_reading_table)
-            # new_coord_table.append(f_coord_table)
 
+        # Sort the lines by row so we can process them using scanline
         new_reading_table = np.vstack(new_reading_table)
-        # new_coord_table = np.vstack(new_coord_table)
-        # sort new reading table by rows
-        # sort_idx = np.lexsort((new_reading_table[:, 3], new_reading_table[:, 0]))
         sort_idx = np.argsort(new_reading_table[:, 0])
         reading_table = new_reading_table[sort_idx]
-        # coord_table = new_coord_table[sort_idx]
         
         self.results = process_reading_table(
             reading_table, features, raster, self.stats, partials=partials
@@ -770,134 +582,3 @@ class AggQuadTree(ZonalStatMethod):
         # End Debugging code
 
         return self.results
-
-
-# def test_plot(boxes, aggregates, parent_ids, ids):
-
-#     nx, ny = 8, 8
-#     # normalize boxes to fit in the figure
-#     x_min = min(boxes[:, [0, 2]].flatten())
-#     x_max = max(boxes[:, [0, 2]].flatten())
-#     y_min = min(boxes[:, [1, 3]].flatten())
-#     y_max = max(boxes[:, [1, 3]].flatten())
-
-#     boxes[:, [0, 2]] = (boxes[:, [0, 2]] - x_min) / (x_max - x_min) * nx
-#     boxes[:, [1, 3]] = (boxes[:, [1, 3]] - y_min) / (y_max - y_min) * ny
-
-#     fig, ax = plt.subplots(figsize=(nx, ny))
-
-#     for i, (x0, y0, x1, y1) in enumerate(boxes):
-#         rect = patches.Rectangle(
-#             (x0, y0), x1 - x0, y1 - y0, linewidth=1, edgecolor="black", facecolor="none"
-#         )
-#         ax.add_patch(rect)
-
-#         # Label the box with its index at the center
-#         cx = (x0 + x1) / 2
-#         cy = (y0 + y1) / 2
-#         tt = aggregates[i]["count"]
-#         pp = parent_ids[i]
-
-#         color = "black"
-#         if int(pp) in [1330, 1220, 1221, 1224]:
-#             color = "red"
-
-#         ii = ids[i]
-#         ttt = str(ii) + " p:" + str(pp)
-#         ax.text(cx, cy, ttt, fontsize=8, ha="center", va="center", color=color)
-
-#     ax.set_xlim(min(boxes[:, 0]), max(boxes[:, 2]))
-#     ax.set_ylim(min(boxes[:, 1]), max(boxes[:, 3]))
-#     ax.set_aspect("equal")
-#     ax.invert_yaxis()  # Optional: to mimic raster image top-down layout
-#     plt.grid(True)
-#     plt.show()
-#     plt.savefig("test_plot.png")
-
-
-# def plot_masks(raster, geom, my_mask, window):
-
-#     correct_mask = Masking().mask(geom, raster, window)
-#     # plot 3 things:
-#     # my_mask
-#     # correct_mask
-#     # difference between the two masks
-#     fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-#     ax[0].imshow(my_mask, cmap="gray")
-#     ax[0].set_title("My Mask")
-#     ax[1].imshow(correct_mask, cmap="gray")
-#     ax[1].set_title("Correct Mask")
-#     ax[2].imshow(my_mask.astype(int) - correct_mask.astype(int), cmap="gray")
-#     ax[2].set_title("Difference")
-#     plt.show()
-#     print("stop")
-#     # add colorbar to the first two plots
-
-    # plot difference between the two masks
-    # mask - correct_mask
-    # print('done')
-
-
-# def test_raster():
-
-#     # 10x10 raster with all 1s
-#     array = np.ones((8, 8), dtype=np.uint8)
-#     transform = rio.transform.from_origin(0, 8, 1, 1)  # (x_min, y_max, x_res, y_res)
-#     from constants import RASTER_DATA_PATH
-
-#     # Create the GeoTIFF file
-#     with rio.open(
-#         f"{RASTER_DATA_PATH}/test.tif",
-#         "w",
-#         driver="GTiff",
-#         height=array.shape[0],
-#         width=array.shape[1],
-#         count=1,
-#         dtype=array.dtype,
-#         crs="EPSG:4326",  # WGS84
-#         transform=transform,
-#     ) as dst:
-#         dst.write(array, 1)
-
-
-# def test():
-
-#     from constants import VECTOR_DATA_PATH, RASTER_DATA_PATH
-
-#     ag = AggQuadTree(max_depth=3)
-#     vector_layer_file = f'{VECTOR_DATA_PATH}/cb_2018_us_state_20m_filtered.shp'
-#     raster_layer_file = f'{RASTER_DATA_PATH}/US_MSR.tif'
-
-#     test_raster()
-#     raster_layer_file = f'{RASTER_DATA_PATH}/test.tif'
-#     ag(raster_layer_file, vector_layer_file, ['count', 'mean'])
-
-
-# def test():
-#     from constants import RASTER_DATA_PATH, VECTOR_DATA_PATH
-#     from reference import reference_method
-
-#     ag = AggQuadTree(max_depth=7)
-#     vector_layer_file = f"{VECTOR_DATA_PATH}/cb_2018_us_state_20m_filtered.shp"
-#     raster_layer_file = f"{RASTER_DATA_PATH}/US_MSR_resampled_x4.tif"
-
-#     # test_raster()
-#     # raster_layer_file = f'{RASTER_DATA_PATH}/test.tif'
-#     r1 = ag(raster_layer_file, vector_layer_file, ["count"])
-
-#     rlow, rhigh = reference_method(raster_layer_file, vector_layer_file, ["count"])
-
-#     for i in range(len(r1)):
-#         r_c = r1[i]["count"]
-#         r_l = rlow[i]["count"]
-#         r_h = rhigh[i]["count"]
-#         err1 = abs(r_c - r_l) / r_l
-#         err2 = abs(r_c - r_h) / r_h
-#         print(f"Error {i}: {err1:.2%}")
-#         if err1 > 0.03:
-#             print(f"r_c: {r_c}, r_l: {r_l}, r_h: {r_h}")
-
-#     print("done")
-
-
-# test()

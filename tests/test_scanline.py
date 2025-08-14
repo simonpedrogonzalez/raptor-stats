@@ -225,6 +225,17 @@ def test_dataset_mask():
     assert stats[1]["count"] == 0
 
 
+# TODO: I knew this would be a problem. Fix it, for scanline too.
+def test_dataset_mask_inverse_polygon_order():
+    polygons = os.path.join(DATA, "polygons.shp")
+    gdf = gpd.read_file(polygons)
+    # reverse the order of the polygons
+    gdf = gdf.iloc[::-1].reset_index(drop=True)
+    raster = os.path.join(DATA, "dataset_mask.tif")
+    stats = zonal_stats(gdf, raster, stats="*")
+    assert stats[0]["count"] == 0
+    assert stats[1]["count"] == 75
+
 def test_partial_overlap():
     polygons = os.path.join(DATA, "polygons_partial_overlap.shp")
     stats = zonal_stats(polygons, raster, stats="count")

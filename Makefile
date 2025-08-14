@@ -1,7 +1,7 @@
 .PHONY: test
 
 test:
-	pytest tests/test_zonal.py --maxfail=1 --pdb
+	pytest tests --maxfail=1 --pdb
 
 prof:
 	kernprof -l  -o experiments/profile_method.py.lprof experiments/profile_method.py
