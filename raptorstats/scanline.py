@@ -23,7 +23,7 @@ def rows_to_ys(rows, transform):
     return (transform * (0, rows + 0.5))[1]
 
 def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetReader):
-    """Intersect features with scanlines and return the intersection table
+    """Intersect features with scanlines and return the intersection table.
 
     Parameters
     ----------
@@ -39,6 +39,7 @@ def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetRead
     ------
     TypeError
         If the intersection type is not LineString or MultiLineString
+
     """
 
     window = rio.features.geometry_window(
@@ -111,7 +112,7 @@ def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetRead
     return f_index, coords
 
 def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader, return_coordinates=False, sort_by_feature=False):
-    """Create a reading table indicating which pixels to read for each feature
+    """Create a reading table indicating which pixels to read for each feature.
 
     Parameters
     ----------
@@ -128,6 +129,7 @@ def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader,
     -------
     np.ndarray or tuple of np.ndarray
         (row, col0, col1, f_index), (y, x0, x1) if return_coordinates is True
+
     """
     inter_ys = intersection_coords[:, 0]
     inter_x0s = intersection_coords[:, 1]
@@ -159,7 +161,7 @@ def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader,
     return reading_table[sort_idx]
 
 def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats, partials=None):
-    """ Read the pixels indicated by the reading table and compute statistics
+    """Read the pixels indicated by the reading table and compute statistics.
 
     Parameters
     ----------
@@ -178,6 +180,7 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
     -------
     List[Dict]
         A list of statistics for each feature
+
     """
     rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
 

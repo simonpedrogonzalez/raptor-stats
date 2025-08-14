@@ -23,8 +23,7 @@ def zonal_stats(
     method="scanline",
     **kwargs,
 ):
-    """
-    Zonal statistics using the AggQuadTree or Scanline methods.
+    """Zonal statistics using the AggQuadTree or Scanline methods.
 
     Parameters
     ----------
@@ -42,6 +41,7 @@ def zonal_stats(
     Returns
     -------
     list[dict]                      one stats-dict (or Feature) per input geometry
+
     """
 
     stats_conf = Stats(stats, categorical=categorical)

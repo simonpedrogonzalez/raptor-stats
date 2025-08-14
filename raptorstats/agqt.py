@@ -80,10 +80,12 @@ class AggQuadTree(ZonalStatMethod):
             return (part1by1(ys) << 1) | part1by1(xs)
 
         def get_boxes_aligned_even(divisions: int, raster: rio.DatasetReader):
-            """
-            Build a divisions x divisions grid of pixel-aligned tiles with remainder
-            distributed as evenly as possible. Returns (boxes, ix, iy) with boxes
-            as (left, bottom, right, top) in CRS coords.
+            """Build a divisions x divisions grid of pixel-aligned tiles with remainder
+            distributed as evenly as possible.
+
+            Returns (boxes, ix, iy) with boxes as (left, bottom, right, top) in CRS
+            coords.
+
             """
             from rasterio.windows import Window
             from rasterio.windows import bounds as win_bounds
@@ -117,8 +119,9 @@ class AggQuadTree(ZonalStatMethod):
             return np.asarray(boxes, float), np.asarray(ix, int), np.asarray(iy, int)
 
         def coarsen_from_children(boxes, ix, iy, divisions):
-            """Given current level (divisions×divisions) tiles, build parent level ((div/2)×(div/2))
-            by grouping children with parent indices (ix//2, iy//2) and unioning bounds."""
+            """Given current level (divisions×divisions) tiles, build parent level
+            ((div/2)×(div/2)) by grouping children with parent indices (ix//2, iy//2)
+            and unioning bounds."""
             parent_div = divisions // 2
             pix = ix // 2
             piy = iy // 2

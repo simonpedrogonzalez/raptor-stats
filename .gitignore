@@ -215,3 +215,6 @@ profile_method.py.lprof
 results/*
 experiments/profile_results.txt
 experiments/memory_results.txt
+index_AggQuadTree_depth_5.dat
+
+index_AggQuadTree_depth_5.idx

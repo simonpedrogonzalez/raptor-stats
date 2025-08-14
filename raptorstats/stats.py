@@ -20,7 +20,9 @@ VALID_STATS = DEFAULT_STATS + [
 class Stats:
     """Configuration for statistics computation.
 
-    Stores the statistics to be computed.
+    Stores the statistics to be computed and has methods for
+    computing them from arrays or partial results.
+
     """
 
     def __init__(self, stats=None, categorical=False):
@@ -113,8 +115,7 @@ class Stats:
     
 
     def from_array(self, data: np.ma.MaskedArray) -> dict:
-        """
-        Compute the configured statistics on *data*.
+        """Compute the configured statistics on *data*.
 
         Parameters
         ----------
@@ -128,6 +129,7 @@ class Stats:
             Keys are the statistic names requested at construction time
             (plus every {value: count} entry if categorical=True).
             Values are floats or ints; empty inputs yield None.
+
         """
         # ---------- normalise to plain ndarray + boolean mask -----------
         if np.ma.isMaskedArray(data):
@@ -199,8 +201,7 @@ class Stats:
     # ------------------------------------------------------------------ #
 
     def from_partials(self, partials: list[dict]) -> dict:
-        """
-        Combine already-computed chunk statistics into one feature-level dict.
+        """Combine already-computed chunk statistics into one feature-level dict.
 
         Each element of *partials* must have been produced by `from_array()`
         with **the same Stats configuration**.
@@ -210,6 +211,7 @@ class Stats:
         dict
             Feature-level statistics – exactly the same schema you get from
             calling `from_array()` on the full dataset at once.
+
         """
         # discard empty / None chunks
         chunks = [p for p in partials if p]

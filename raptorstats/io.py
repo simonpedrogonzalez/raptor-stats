@@ -43,8 +43,7 @@ def validate_is_north_up(transform):
 
 @contextmanager
 def open_raster(source, *, affine=None, nodata=None, band=1, crs=None):
-    """
-    Yield a rasterio.DatasetReader no matter what the caller passes.
+    """Yield a rasterio.DatasetReader no matter what the caller passes.
 
     Parameters
     ----------
@@ -57,6 +56,7 @@ def open_raster(source, *, affine=None, nodata=None, band=1, crs=None):
     Yields
     ------
     ds : rasterio.io.DatasetReaderBase
+
     """
 
     memfile = None
@@ -153,8 +153,7 @@ def open_vector(
     crs=None,
     affine: Affine | None = None,
 ) -> gpd.GeoDataFrame:
-    """
-    Normalise *vectors* into a GeoDataFrame.
+    """Normalise *vectors* into a GeoDataFrame.
 
     Parameters
     ----------
@@ -170,6 +169,7 @@ def open_vector(
     gdf : GeoDataFrame
         Always contains at least a 'geometry' column and a CRS.
         The caller can attach extra attributes with `gdf.attrs[...]`.
+
     """
 
     # GeoDataFrame

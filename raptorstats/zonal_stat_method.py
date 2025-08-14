@@ -18,13 +18,14 @@ class ZonalStatMethod:
         return {}
 
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
-        """Precomputations to be done before the main loop, for example for
-        creating indexes, QuadTrees, etc. Implementing this method is optional.
+        """Precomputations to be done before the main loop, for example for creating
+        indexes, QuadTrees, etc. Implementing this method is optional.
 
         Parameters
         ----------
         features : gpd.GeoDataFrame
         raster : rio.DatasetReader
+
         """
         pass
 
@@ -34,7 +35,8 @@ class ZonalStatMethod:
         raster: rio.DatasetReader,
         window: rio.windows.Window,
     ):
-        """Method to be implemented by the subclass to compute the statistics of a single geometry."""
+        """Method to be implemented by the subclass to compute the statistics of a
+        single geometry."""
         raise NotImplementedError
 
     def _run(self, vector_layer: gpd.GeoDataFrame, raster: rio.DatasetReader):
@@ -65,6 +67,7 @@ class ZonalStatMethod:
         Returns
         -------
         List[Dict[str, float]]
+
         """
         self.stats = stats
         self.raster = raster
