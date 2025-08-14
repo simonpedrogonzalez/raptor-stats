@@ -1,18 +1,13 @@
 import os
 
 import geopandas as gpd
-import line_profiler
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
 import numpy as np
 import rasterio as rio
 from raptorstats.node import Node
-from raptorstats.raster_methods import Masking
 from raptorstats.scanline import Scanline
 from rtree import index
-from shapely import Geometry, MultiLineString, box
+from shapely import box
 from raptorstats.zone_stat_method import ZonalStatMethod
-from raptorstats.stats import Stats
 from raptorstats.scanline import build_intersection_table, build_reading_table, process_reading_table
 import warnings
 
@@ -130,7 +125,10 @@ class AggQuadTree(ZonalStatMethod):
             # Composite key to group by parent cell
             keys = piy * parent_div + pix
             order = np.argsort(keys)
-            boxes = boxes[order]; pix = pix[order]; piy = piy[order]; keys = keys[order]
+            boxes = boxes[order]
+            pix = pix[order]
+            piy = piy[order]
+            keys = keys[order]
 
             uniq, starts = np.unique(keys, return_index=True)
             out_boxes = np.empty((len(uniq), 4), dtype=boxes.dtype)
