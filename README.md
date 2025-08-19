@@ -31,11 +31,11 @@ See the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor-stats
 
 Raptor methods performance advantage increases with the size of the input raster and number of features. For example, with an ~1.9 billion pixel raster and 50 features (US states):
 
-![](assets/total_time_s_states.png "States")
+![](assets/total_time_s_states.svg)
 
 For the same raster, on but around 3000 features (US counties):
 
-![](assets/total_time_s_counties.png "Counties")
+![](assets/total_time_s_counties.svg)
 
 
 NOTES:
