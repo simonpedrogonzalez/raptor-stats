@@ -236,6 +236,7 @@ def test_dataset_mask_inverse_polygon_order():
     assert stats[0]["count"] == 0
     assert stats[1]["count"] == 75
 
+
 def test_partial_overlap():
     polygons = os.path.join(DATA, "polygons_partial_overlap.shp")
     stats = zonal_stats(polygons, raster, stats="count")

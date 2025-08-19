@@ -155,7 +155,7 @@ def open_vector(
 ) -> gpd.GeoDataFrame:
     """Normalise *vectors* into a GeoDataFrame.
 
-    
+
     Parameters
     ----------
     vectors   : many flavours, see type hint above.

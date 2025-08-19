@@ -6,16 +6,15 @@ import sys
 import numpy as np
 import pytest
 import rasterio
+import rasterio as rio
 from affine import Affine
 from shapely.geometry import Polygon
 from utils import compare_stats_exact_match, compute_file_hash
+
+from raptorstats import build_agqt_index, zonal_stats
 from raptorstats.agqt import AggQuadTree
-from raptorstats.io import open_raster, open_vector
-from raptorstats.stats import Stats
-import rasterio as rio
-    
-from raptorstats import zonal_stats, build_agqt_index
-from raptorstats.stats import VALID_STATS
+from raptorstats.io import open_raster
+from raptorstats.stats import VALID_STATS, Stats
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -24,10 +23,15 @@ raster = os.path.join(DATA, "slope.tif")
 raster_US = os.path.join(DATA, "US_MSR_resampled_x10.tif")
 INDICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "indices")
 
+
 def test_builds_index():
     polygons = os.path.join(DATA, "polygons.shp")
 
-    kwargs_new_index = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/new_index.idx"}
+    kwargs_new_index = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/new_index.idx",
+    }
 
     if os.path.exists(f"{INDICES}/new_index.idx"):
         os.remove(f"{INDICES}/new_index.idx")
@@ -50,7 +54,12 @@ def test_builds_index():
 def test_force_rebuild_index():
     polygons = os.path.join(DATA, "polygons.shp")
 
-    kwargs_new_index = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/new_index.idx", 'build_index': True }
+    kwargs_new_index = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/new_index.idx",
+        "build_index": True,
+    }
 
     # garbage index files
     with open(f"{INDICES}/new_index.idx", "w") as f:
@@ -58,7 +67,9 @@ def test_force_rebuild_index():
     with open(f"{INDICES}/new_index.dat", "w") as f:
         f.write("garbage")
 
-    hash_before = compute_file_hash(f"{INDICES}/new_index.idx") + compute_file_hash(f"{INDICES}/new_index.dat")
+    hash_before = compute_file_hash(f"{INDICES}/new_index.idx") + compute_file_hash(
+        f"{INDICES}/new_index.dat"
+    )
 
     # force rebuild index
     stats = zonal_stats(polygons, raster, **kwargs_new_index)
@@ -73,18 +84,23 @@ def test_force_rebuild_index():
     assert os.path.exists(f"{INDICES}/new_index.idx")
     assert os.path.exists(f"{INDICES}/new_index.dat")
 
-    hash_after = compute_file_hash(f"{INDICES}/new_index.idx") + compute_file_hash(f"{INDICES}/new_index.dat")
+    hash_after = compute_file_hash(f"{INDICES}/new_index.idx") + compute_file_hash(
+        f"{INDICES}/new_index.dat"
+    )
 
     assert hash_before != hash_after, "Index files were not rebuilt as expected."
-    
+
     os.remove(f"{INDICES}/new_index.idx")
     os.remove(f"{INDICES}/new_index.dat")
 
+
 def test_use_existing_index():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/my_index.idx" }
-    hash_before = compute_file_hash(f"{INDICES}/my_index.idx") + compute_file_hash(f"{INDICES}/my_index.dat")
-    
+    kwargs = {"method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/my_index.idx"}
+    hash_before = compute_file_hash(f"{INDICES}/my_index.idx") + compute_file_hash(
+        f"{INDICES}/my_index.dat"
+    )
+
     stats = zonal_stats(polygons, raster, build_index=False, **kwargs)
     for key in ["count", "min", "max", "mean"]:
         assert key in stats[0]
@@ -93,12 +109,13 @@ def test_use_existing_index():
     assert stats[1]["count"] == 50
     assert round(stats[0]["mean"], 2) == 14.66
     # check that the index files were untouched
-    hash_after = compute_file_hash(f"{INDICES}/my_index.idx") + compute_file_hash(f"{INDICES}/my_index.dat")
+    hash_after = compute_file_hash(f"{INDICES}/my_index.idx") + compute_file_hash(
+        f"{INDICES}/my_index.dat"
+    )
     assert hash_before == hash_after, "Index files were modified unexpectedly."
 
 
 def test_compute_tree():
-    polygons = os.path.join(DATA, "polygons.shp")
     default_file = "index_AggQuadTree_depth_5"
     if os.path.exists(f"{INDICES}/{default_file}.idx"):
         os.remove(f"{INDICES}/{default_file}.idx")
@@ -106,44 +123,52 @@ def test_compute_tree():
         os.remove(f"{INDICES}/{default_file}.dat")
 
     with open_raster(raster) as raster_ds:
-        features = open_vector(polygons)
         agqt = AggQuadTree(max_depth=5, index_path=f"{INDICES}/{default_file}.idx")
         agqt.stats = Stats("*")
         agqt._compute_quad_tree(raster_ds)
         idx = agqt.idx
-        
+
         # Correct number of nodes
         n_all_nodes_created = len(list(idx.intersection(idx.bounds, objects=False)))
-        win_bounds = raster_ds.window_bounds(rio.windows.Window(0, 0, raster_ds.width, raster_ds.height))
-        all_nodes = list(idx.intersection(win_bounds, objects=True)) # within window
-        n_nodes = (4**(5 + 1) - 1) // (4 - 1)  # geometric series of 4 divisions
+        win_bounds = raster_ds.window_bounds(
+            rio.windows.Window(0, 0, raster_ds.width, raster_ds.height)
+        )
+        all_nodes = list(idx.intersection(win_bounds, objects=True))  # within window
+        n_nodes = (4 ** (5 + 1) - 1) // (4 - 1)  # geometric series of 4 divisions
         # All nodes created are inside the window and match the expected count
-        assert len(all_nodes) == n_all_nodes_created == n_nodes, \
-            "Number of nodes in the index does not match expected count"
-        
+        assert (
+            len(all_nodes) == n_all_nodes_created == n_nodes
+        ), "Number of nodes in the index does not match expected count"
+
         # Correct bounds
         idx_bounds = np.array(idx.bounds)
         raster_bounds = np.array(raster_ds.bounds)
-        assert np.allclose(idx_bounds, raster_bounds), "Index bounds do not match raster bounds"
+        assert np.allclose(
+            idx_bounds, raster_bounds
+        ), "Index bounds do not match raster bounds"
 
         # Correct stats
         all_nodes = [node.object for node in all_nodes]
         all_nodes = sorted(all_nodes, key=lambda x: x.level)[::-1]
         node_stats = [n.stats for n in all_nodes]
-        correct_stats = json.load(open(os.path.join(DATA, "test_agqt_tree_results.json")))
-        correct, errors = compare_stats_exact_match(correct_stats,node_stats)
+        correct_stats = json.load(
+            open(os.path.join(DATA, "test_agqt_tree_results.json"))
+        )
+        correct, errors = compare_stats_exact_match(correct_stats, node_stats)
         assert correct, f"Node stats do not match truth: {errors}"
-        
+
         # Test each pixel is in one node of each level
         # The most painful way...
         for i in range(raster_ds.width):
             for j in range(raster_ds.height):
                 pixel_bounds = raster_ds.xy(j, i)
                 nodes = list(idx.intersection(pixel_bounds, objects=True))
-                assert len(nodes) == 5+1, f"Pixel at ({i}, {j}) is not in 5 nodes"
+                assert len(nodes) == 5 + 1, f"Pixel at ({i}, {j}) is not in 5 nodes"
                 node_levels = [node.object.level for node in nodes]
-                assert sorted(node_levels) == list(range(5+1)), f"Pixel at ({i}, {j}) is not in nodes of all levels"
-        
+                assert sorted(node_levels) == list(
+                    range(5 + 1)
+                ), f"Pixel at ({i}, {j}) is not in nodes of all levels"
+
         # Test exists files
         assert os.path.exists(f"{INDICES}/{default_file}.idx")
         assert os.path.exists(f"{INDICES}/{default_file}.dat")
@@ -154,48 +179,58 @@ def test_compute_tree():
 
 
 def test_build_tree_function():
-    polygons = os.path.join(DATA, "polygons.shp")
     default_file = "index_AggQuadTree_depth_5"
     if os.path.exists(f"{INDICES}/{default_file}.idx"):
         os.remove(f"{INDICES}/{default_file}.idx")
     if os.path.exists(f"{INDICES}/{default_file}.dat"):
         os.remove(f"{INDICES}/{default_file}.dat")
 
-    idx = build_agqt_index(raster, max_depth=5, index_path=f"{INDICES}/{default_file}.idx", stats="*")
-    
+    idx = build_agqt_index(
+        raster, max_depth=5, index_path=f"{INDICES}/{default_file}.idx", stats="*"
+    )
+
     with open_raster(raster) as raster_ds:
         # Correct number of nodes
         n_all_nodes_created = len(list(idx.intersection(idx.bounds, objects=False)))
-        win_bounds = raster_ds.window_bounds(rio.windows.Window(0, 0, raster_ds.width, raster_ds.height))
-        all_nodes = list(idx.intersection(win_bounds, objects=True)) # within window
-        n_nodes = (4**(5 + 1) - 1) // (4 - 1)  # geometric series of 4 divisions
+        win_bounds = raster_ds.window_bounds(
+            rio.windows.Window(0, 0, raster_ds.width, raster_ds.height)
+        )
+        all_nodes = list(idx.intersection(win_bounds, objects=True))  # within window
+        n_nodes = (4 ** (5 + 1) - 1) // (4 - 1)  # geometric series of 4 divisions
         # All nodes created are inside the window and match the expected count
-        assert len(all_nodes) == n_all_nodes_created == n_nodes, \
-            "Number of nodes in the index does not match expected count"
-        
+        assert (
+            len(all_nodes) == n_all_nodes_created == n_nodes
+        ), "Number of nodes in the index does not match expected count"
+
         # Correct bounds
         idx_bounds = np.array(idx.bounds)
         raster_bounds = np.array(raster_ds.bounds)
-        assert np.allclose(idx_bounds, raster_bounds), "Index bounds do not match raster bounds"
+        assert np.allclose(
+            idx_bounds, raster_bounds
+        ), "Index bounds do not match raster bounds"
 
         # Correct stats
         all_nodes = [node.object for node in all_nodes]
         all_nodes = sorted(all_nodes, key=lambda x: x.level)[::-1]
         node_stats = [n.stats for n in all_nodes]
-        correct_stats = json.load(open(os.path.join(DATA, "test_agqt_tree_results.json")))
-        correct, errors = compare_stats_exact_match(correct_stats,node_stats)
+        correct_stats = json.load(
+            open(os.path.join(DATA, "test_agqt_tree_results.json"))
+        )
+        correct, errors = compare_stats_exact_match(correct_stats, node_stats)
         assert correct, f"Node stats do not match truth: {errors}"
-        
+
         # Test each pixel is in one node of each level
         # The most painful way...
         for i in range(raster_ds.width):
             for j in range(raster_ds.height):
                 pixel_bounds = raster_ds.xy(j, i)
                 nodes = list(idx.intersection(pixel_bounds, objects=True))
-                assert len(nodes) == 5+1, f"Pixel at ({i}, {j}) is not in 5 nodes"
+                assert len(nodes) == 5 + 1, f"Pixel at ({i}, {j}) is not in 5 nodes"
                 node_levels = [node.object.level for node in nodes]
-                assert sorted(node_levels) == list(range(5+1)), f"Pixel at ({i}, {j}) is not in nodes of all levels"
-        
+                assert sorted(node_levels) == list(
+                    range(5 + 1)
+                ), f"Pixel at ({i}, {j}) is not in nodes of all levels"
+
         # Test exists files
         assert os.path.exists(f"{INDICES}/{default_file}.idx")
         assert os.path.exists(f"{INDICES}/{default_file}.dat")
@@ -206,7 +241,11 @@ def test_build_tree_function():
 
 
 def test_US():
-    kwargs_us = { "method": "agqt", "max_depth": 5, "index_path": f"{INDICES}/us_index.idx" }
+    kwargs_us = {
+        "method": "agqt",
+        "max_depth": 5,
+        "index_path": f"{INDICES}/us_index.idx",
+    }
     states = os.path.join(DATA, "cb_2018_us_state_20m_filtered_filtered.shp")
     correct_result = os.path.join(DATA, "test_US_results.json")
     stats = zonal_stats(states, raster_US, stats="*", categorical=True, **kwargs_us)
@@ -220,15 +259,20 @@ def test_US():
 
 def test_zonal_nodata():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/my_index.idx" }
+    kwargs = {"method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/my_index.idx"}
     stats = zonal_stats(polygons, raster, nodata=0, **kwargs)
     assert len(stats) == 2
     assert stats[0]["count"] == 75
     assert stats[1]["count"] == 50
 
+
 # Test multigeoms
 def test_multipolygons():
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_multipolygons.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_multipolygons.idx",
+    }
     multipolygons = os.path.join(DATA, "multipolygons.shp")
     stats = zonal_stats(multipolygons, raster, **kwargs)
     assert len(stats) == 1
@@ -240,7 +284,11 @@ def test_multipolygons():
 
 def test_categorical():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_categorical.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_categorical.idx",
+    }
     categorical_raster = os.path.join(DATA, "slope_classes.tif")
     stats = zonal_stats(polygons, categorical_raster, categorical=True, **kwargs)
     assert len(stats) == 2
@@ -249,9 +297,14 @@ def test_categorical():
     os.remove(f"{INDICES}/test_categorical.idx")
     os.remove(f"{INDICES}/test_categorical.dat")
 
+
 def test_specify_stats_list():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_specify_stats_list.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_specify_stats_list.idx",
+    }
     stats = zonal_stats(polygons, raster, stats=["min", "max"], **kwargs)
     assert sorted(stats[0].keys()) == sorted(["min", "max"])
     assert "count" not in list(stats[0].keys())
@@ -261,7 +314,11 @@ def test_specify_stats_list():
 
 def test_specify_all_stats():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_specify_all_stats.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_specify_all_stats.idx",
+    }
     stats = zonal_stats(polygons, raster, stats="ALL", **kwargs)
     # sum_sq and histogram are required for combined stats of std and median
     assert sorted(stats[0].keys()) == sorted(VALID_STATS)
@@ -273,17 +330,28 @@ def test_specify_all_stats():
 
 def test_specify_stats_string():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_specify_stats_string.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_specify_stats_string.idx",
+    }
     stats = zonal_stats(polygons, raster, stats="min max", **kwargs)
     assert sorted(stats[0].keys()) == sorted(["min", "max"])
     assert "count" not in list(stats[0].keys())
     os.remove(f"{INDICES}/test_specify_stats_string.idx")
     os.remove(f"{INDICES}/test_specify_stats_string.dat")
 
+
 def test_optional_stats():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_optional_stats.idx" }
-    stats = zonal_stats(polygons, raster, stats="min max sum majority median std", **kwargs)
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_optional_stats.idx",
+    }
+    stats = zonal_stats(
+        polygons, raster, stats="min max sum majority median std", **kwargs
+    )
     assert stats[0]["min"] <= stats[0]["median"] <= stats[0]["max"]
     os.remove(f"{INDICES}/test_optional_stats.idx")
     os.remove(f"{INDICES}/test_optional_stats.dat")
@@ -291,7 +359,11 @@ def test_optional_stats():
 
 def test_range():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_range.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_range.idx",
+    }
     stats = zonal_stats(polygons, raster, stats="range min max", **kwargs)
     for stat in stats:
         assert np.allclose(stat["max"] - stat["min"], stat["range"])
@@ -307,7 +379,11 @@ def test_range():
 def test_nodata():
     polygons = os.path.join(DATA, "polygons.shp")
     categorical_raster = os.path.join(DATA, "slope_classes.tif")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_nodata.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_nodata.idx",
+    }
     stats = zonal_stats(
         polygons, categorical_raster, stats="*", categorical=True, nodata=1.0, **kwargs
     )
@@ -320,11 +396,14 @@ def test_nodata():
     os.remove(f"{INDICES}/test_nodata.dat")
 
 
-
 def test_dataset_mask():
     polygons = os.path.join(DATA, "polygons.shp")
     raster = os.path.join(DATA, "dataset_mask.tif")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_dataset_mask.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_dataset_mask.idx",
+    }
     stats = zonal_stats(polygons, raster, stats="*", **kwargs)
     assert stats[0]["count"] == 75
     assert stats[1]["count"] == 0
@@ -348,7 +427,11 @@ def test_dataset_mask():
 
 def test_partial_overlap():
     polygons = os.path.join(DATA, "polygons_partial_overlap.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_partial_overlap.idx" }  
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_partial_overlap.idx",
+    }
     stats = zonal_stats(polygons, raster, stats="count", **kwargs)
     for res in stats:
         # each polygon should have at least a few pixels overlap
@@ -359,7 +442,11 @@ def test_partial_overlap():
 
 def test_no_overlap():
     polygons = os.path.join(DATA, "polygons_no_overlap.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_no_overlap.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_no_overlap.idx",
+    }
     stats = zonal_stats(polygons, raster, stats="count", **kwargs)
     for res in stats:
         # no polygon should have any overlap
@@ -387,7 +474,12 @@ def test_ndarray():
         affine = src.transform
 
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_ndarray.idx" , 'build_index': True}
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_ndarray.idx",
+        "build_index": True,
+    }
     stats = zonal_stats(polygons, arr, affine=affine, **kwargs)
     stats2 = zonal_stats(polygons, raster, **kwargs)
     for s1, s2 in zip(stats, stats2):
@@ -399,10 +491,17 @@ def test_ndarray():
     os.remove(f"{INDICES}/test_ndarray.idx")
     os.remove(f"{INDICES}/test_ndarray.dat")
 
+
 def test_percentile_good():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_percentile_good.idx" }
-    stats = zonal_stats(polygons, raster, stats="median percentile_50 percentile_90", **kwargs)
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_percentile_good.idx",
+    }
+    stats = zonal_stats(
+        polygons, raster, stats="median percentile_50 percentile_90", **kwargs
+    )
     assert "percentile_50" in stats[0].keys()
     assert "percentile_90" in stats[0].keys()
     assert stats[0]["percentile_50"] == stats[0]["median"]
@@ -413,11 +512,17 @@ def test_percentile_good():
 
 def test_percentile_nodata():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_percentile_nodata.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_percentile_nodata.idx",
+    }
     categorical_raster = os.path.join(DATA, "slope_classes.tif")
     # By setting nodata to 1, one of our polygons is within the raster extent
     # but has an empty masked array
-    stats = zonal_stats(polygons, categorical_raster, stats=["percentile_90"], nodata=1, **kwargs)
+    stats = zonal_stats(
+        polygons, categorical_raster, stats=["percentile_90"], nodata=1, **kwargs
+    )
     assert "percentile_90" in stats[0].keys()
     assert [np.nan, 5.0] == [x["percentile_90"] for x in stats]
     os.remove(f"{INDICES}/test_percentile_nodata.idx")
@@ -426,7 +531,11 @@ def test_percentile_nodata():
 
 def test_percentile_bad():
     polygons = os.path.join(DATA, "polygons.shp")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_percentile_bad.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_percentile_bad.idx",
+    }
     with pytest.raises(ValueError):
         zonal_stats(polygons, raster, stats="percentile_101", **kwargs)
 
@@ -434,7 +543,11 @@ def test_percentile_bad():
 def test_all_nodata():
     polygons = os.path.join(DATA, "polygons.shp")
     raster = os.path.join(DATA, "all_nodata.tif")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_all_nodata.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_all_nodata.idx",
+    }
     stats = zonal_stats(polygons, raster, stats=["nodata", "count"], **kwargs)
     assert stats[0]["nodata"] == 75
     assert stats[0]["count"] == 0
@@ -447,7 +560,11 @@ def test_all_nodata():
 def test_some_nodata():
     polygons = os.path.join(DATA, "polygons.shp")
     raster = os.path.join(DATA, "slope_nodata.tif")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_some_nodata.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_some_nodata.idx",
+    }
     stats = zonal_stats(polygons, raster, stats=["nodata", "count"], **kwargs)
     assert stats[0]["nodata"] == 36
     assert stats[0]["count"] == 39
@@ -462,9 +579,18 @@ def test_nan_nodata():
     polygon = Polygon([[0, 0], [2, 0], [2, 2], [0, 2]])
     arr = np.array([[np.nan, 12.25], [-999, 12.75]])
     affine = Affine(1, 0, 0, 0, -1, 2)
-    kwargs = { "method": "agqt", "max_depth": 1, "index_path": f"{INDICES}/test_nan_nodata.idx" }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 1,
+        "index_path": f"{INDICES}/test_nan_nodata.idx",
+    }
     stats = zonal_stats(
-        polygon, arr, affine=affine, nodata=-999, stats="nodata count sum mean min max", **kwargs
+        polygon,
+        arr,
+        affine=affine,
+        nodata=-999,
+        stats="nodata count sum mean min max",
+        **kwargs,
     )
 
     assert stats[0]["nodata"] == 1
@@ -479,20 +605,32 @@ def test_nan_nodata():
 def test_some_nodata_ndarray():
     polygons = os.path.join(DATA, "polygons.shp")
     raster = os.path.join(DATA, "slope_nodata.tif")
-    kwargs = { "method": "agqt", "max_depth": 4, "index_path": f"{INDICES}/test_some_nodata_ndarray.idx", 'build_index': True }
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 4,
+        "index_path": f"{INDICES}/test_some_nodata_ndarray.idx",
+        "build_index": True,
+    }
     with rasterio.open(raster) as src:
         arr = src.read(1)
         affine = src.transform
 
     # without nodata
-    stats = zonal_stats(polygons, arr, affine=affine, stats=["nodata", "count", "min"], **kwargs)
+    stats = zonal_stats(
+        polygons, arr, affine=affine, stats=["nodata", "count", "min"], **kwargs
+    )
     assert stats[0]["min"] == -9999.0
     assert stats[0]["nodata"] == 0
     assert stats[0]["count"] == 75
 
     # with nodata
     stats = zonal_stats(
-        polygons, arr, affine=affine, nodata=-9999.0, stats=["nodata", "count", "min"], **kwargs
+        polygons,
+        arr,
+        affine=affine,
+        nodata=-9999.0,
+        stats=["nodata", "count", "min"],
+        **kwargs,
     )
     assert stats[0]["min"] >= 0.0
     assert stats[0]["nodata"] == 36
@@ -508,13 +646,20 @@ def test_some_nodata_ndarray():
 #     polygons = os.path.join(DATA, "polygons.shp")
 
 #     stats = zonal_stats(polygons, arr, affine=affine, **kwargs)
-    # with pytest.deprecated_call():
-    #     stats2 = zonal_stats(polygons, arr, transform=affine.to_gdal())
-    # assert stats == stats2
+# with pytest.deprecated_call():
+#     stats2 = zonal_stats(polygons, arr, transform=affine.to_gdal())
+# assert stats == stats2
+
 
 def test_nan_counts():
     from affine import Affine
-    kwargs = { "method": "agqt", "max_depth": 1, "index_path": f"{INDICES}/test_nan_counts.idx", 'build_index': True }
+
+    kwargs = {
+        "method": "agqt",
+        "max_depth": 1,
+        "index_path": f"{INDICES}/test_nan_counts.idx",
+        "build_index": True,
+    }
 
     transform = Affine(1, 0, 1, 0, -1, 3)
 
@@ -532,7 +677,9 @@ def test_nan_counts():
         assert res["nan"] == 3  # 3 pixels of nans
 
     # nan are ignored if nan stat is not requested
-    stats = zonal_stats(geom, data, affine=transform, nodata=0.0, stats="count nodata", **kwargs)
+    stats = zonal_stats(
+        geom, data, affine=transform, nodata=0.0, stats="count nodata", **kwargs
+    )
 
     for res in stats:
         assert res["count"] == 3  # 3 pixels of valid data

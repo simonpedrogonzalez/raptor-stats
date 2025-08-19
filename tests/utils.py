@@ -1,13 +1,16 @@
+import hashlib
+
 import numpy as np
 import rasterio as rio
-import hashlib
+
 
 def compute_file_hash(file_path):
     h = hashlib.sha256()
-    with open(file_path, 'rb') as f:
-        for block in iter(lambda: f.read(4096), b''):
+    with open(file_path, "rb") as f:
+        for block in iter(lambda: f.read(4096), b""):
             h.update(block)
     return h.hexdigest()
+
 
 def compare_histograms(hist1, hist2):
     # compare two histograms
@@ -15,7 +18,7 @@ def compare_histograms(hist1, hist2):
         return False, {
             "error": "Histograms have different lengths",
             "length1": len(hist1),
-            "length2": len(hist2)
+            "length2": len(hist2),
         }
 
     for key in hist1.keys():
@@ -37,7 +40,7 @@ def compare_histograms(hist1, hist2):
 
 
 def compare_stats_exact_match(reference, result):
-    
+
     for i in range(len(result)):
         h1 = result[i].get("histogram", {})
         h2 = reference[i].get("histogram", {})

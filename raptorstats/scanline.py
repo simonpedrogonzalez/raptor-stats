@@ -7,19 +7,22 @@ import rasterio as rio
 import shapely
 from shapely import LineString, MultiLineString
 
-from raptorstats.zonal_stat_method import ZonalStatMethod
 from raptorstats.stats import Stats
+from raptorstats.zonal_stat_method import ZonalStatMethod
+
 
 def xy_to_rowcol(xs, ys, transform):
     cols, rows = (~transform) * (xs, ys)
 
     rows = np.floor(rows).astype(int).clip(min=0)
-    cols = np.ceil(cols - 0.5).astype(int).clip(min=0)   # left-inclusive
+    cols = np.ceil(cols - 0.5).astype(int).clip(min=0)  # left-inclusive
     # cols = np.round(cols).astype(int).clip(min=0)
     return rows, cols
 
+
 def rows_to_ys(rows, transform):
     return (transform * (0, rows + 0.5))[1]
+
 
 def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetReader):
     """Intersect features with scanlines and return the intersection table.
@@ -104,13 +107,20 @@ def build_intersection_table(features: gpd.GeoDataFrame, raster: rio.DatasetRead
 
     if not intersection_table:
         return np.array([], dtype=int), np.array([], dtype=float)
-    
+
     intersection_table = np.array(intersection_table)
     f_index = intersection_table[:, 0].astype(int)
     coords = intersection_table[:, 1:4]
     return f_index, coords
 
-def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader, return_coordinates=False, sort_by_feature=False):
+
+def build_reading_table(
+    f_index,
+    intersection_coords,
+    raster: rio.DatasetReader,
+    return_coordinates=False,
+    sort_by_feature=False,
+):
     """Create a reading table indicating which pixels to read for each feature.
 
     Parameters
@@ -147,19 +157,27 @@ def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader,
         # sort by feature first then by row
         sort_idx = np.lexsort((reading_table[:, 0], reading_table[:, 3]))
     else:
-        # sort just by row  
+        # sort just by row
         sort_idx = np.argsort(reading_table[:, 0])
-    
+
     if return_coordinates:
-        coor = np.stack(
-            [inter_ys, inter_x0s, inter_x1s], axis=1
-        )[sort_idx] # they are separate cause reading table is integer and coordinates are float
+        coor = np.stack([inter_ys, inter_x0s, inter_x1s], axis=1)[
+            sort_idx
+        ]  # they are separate cause reading table is integer and coordinates are float
 
         return reading_table[sort_idx], coor
 
     return reading_table[sort_idx]
 
-def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats, partials=None, max_collected_rows_percentage=10):
+
+def process_reading_table(
+    reading_table: np.ndarray,
+    features: gpd.GeoDataFrame,
+    raster: rio.DatasetReader,
+    stats: Stats,
+    partials=None,
+    max_collected_rows_percentage=10,
+):
     """Read the pixels indicated by the reading table and compute statistics.
 
     Parameters
@@ -182,9 +200,12 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
 
     """
 
-    def compute_partials(pixel_values_per_feature: list, results_per_feature: list, stats: Stats):
+    def compute_partials(
+        pixel_values_per_feature: list, results_per_feature: list, stats: Stats
+    ):
         """Compute partials and append to the results_per_feature list. Both lists are n_features long.
-        Assumes pixel_values_per_feature is a list of lists, and it's ordered by feature index."""
+        Assumes pixel_values_per_feature is a list of lists, and it's ordered by feature index.
+        """
 
         for i in range(len(pixel_values_per_feature)):
             if not pixel_values_per_feature[i]:
@@ -229,7 +250,7 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
 
             if len(pixel_values) > 0:
                 pixel_values_per_feature[f_index].append(pixel_values)
-            
+
         # This is a chunking mechanism to avoid memory issues
         # for large datasets
         if row_count >= max_rows:
@@ -248,7 +269,7 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
         results_per_feature = compute_partials(
             pixel_values_per_feature, results_per_feature, stats
         )
-    
+
     final_results = []
     for i in range(len(results_per_feature)):
         if partials is not None and partials[i]:
@@ -276,9 +297,17 @@ class Scanline(ZonalStatMethod):
                 for _ in features.geometry
             ]
             return
-        reading_table = build_reading_table(f_index, intersection_coords, raster, return_coordinates=False, sort_by_feature=False)
-        self.results = process_reading_table(reading_table, features, raster, self.stats)
-        
+        reading_table = build_reading_table(
+            f_index,
+            intersection_coords,
+            raster,
+            return_coordinates=False,
+            sort_by_feature=False,
+        )
+        self.results = process_reading_table(
+            reading_table, features, raster, self.stats
+        )
+
         # Debugging code
         # window = rio.features.geometry_window(
         #     raster,
@@ -302,7 +331,6 @@ class Scanline(ZonalStatMethod):
         #     np.ceil(window.col_off + window.width)
         # )
 
-        
         # diffs = compare_stats(self.results, self.raster.files[0], features, stats=self.stats, show_diff=True, precision=5)
         # # diffs = [diffs[0]]
         # diff_indices = [d['feature'] for d in diffs]
@@ -340,7 +368,6 @@ class Scanline(ZonalStatMethod):
 
         # global_mask = global_mask[:-1, :]  # remove the last row added for debugging
 
-        
         # ref_mask = ref_mask_rasterstats(diff_features if len(diff_indices) > 0 else features, raster, window)
 
         # print(diffs)

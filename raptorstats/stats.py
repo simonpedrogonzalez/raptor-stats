@@ -112,7 +112,6 @@ class Stats:
         if "nan" in self.stats:
             st["nan"] = 0
         return st
-    
 
     def from_array(self, data: np.ma.MaskedArray) -> dict:
         """Compute the configured statistics on *data*.
@@ -332,14 +331,16 @@ class Stats:
                     def kth(k0):
                         return vals[np.searchsorted(cum, k0 + 1, side="left")]
 
-                    vj  = np.vectorize(kth)(j)
+                    vj = np.vectorize(kth)(j)
                     vj1 = np.vectorize(kth)(np.minimum(j + 1, N - 1))
                     return (1 - g) * vj + g * vj1
 
                 if "median" in self.stats:
                     out["median"] = _quantile(vals=vals, cnts=cnts, q=0.5)
                 for q in self.percentiles:
-                    out[f"percentile_{int(q)}"] = _quantile(vals=vals, cnts=cnts, q=q / 100.0)
+                    out[f"percentile_{int(q)}"] = _quantile(
+                        vals=vals, cnts=cnts, q=q / 100.0
+                    )
 
             if self.run_count:
                 if "unique" in self.stats:

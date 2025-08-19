@@ -1,4 +1,6 @@
+import warnings
 
+from raptorstats.agqt import AggQuadTree
 from raptorstats.io import (
     open_raster,
     open_vector,
@@ -7,8 +9,7 @@ from raptorstats.io import (
 )
 from raptorstats.scanline import Scanline
 from raptorstats.stats import Stats
-from raptorstats.agqt import AggQuadTree
-import warnings
+
 
 def zonal_stats(
     vectors,
@@ -85,7 +86,6 @@ def zonal_stats(
     else:
         raise ValueError(f"Unknown method: {method}. Use 'agqt' or 'scanline'.")
 
-
     with open_raster(raster, affine=affine, nodata=nodata, band=band) as ds:
 
         gdf = open_vector(vectors, layer=layer, affine=affine)
@@ -106,9 +106,18 @@ def zonal_stats(
         return results
 
 
-def build_agqt_index(raster, max_depth, stats=None, band=1, nodata=None, affine=None, categorical=False, index_path=None):
+def build_agqt_index(
+    raster,
+    max_depth,
+    stats=None,
+    band=1,
+    nodata=None,
+    affine=None,
+    categorical=False,
+    index_path=None,
+):
     """Build AggQuadTree index files for the given raster file.
-    
+
     Parameters
     ----------
     raster : str | Path | rasterio.io.DatasetReader | np.ndarray | anything rasterio can read
@@ -134,7 +143,7 @@ def build_agqt_index(raster, max_depth, stats=None, band=1, nodata=None, affine=
     index_path : str | None
         Path to the index file (if using AggQuadTree), default None. If the file doesn't exist, it will be created.
         If not specified, the program will try to use a default path in the current running dir.
-        
+
     Returns
     -------
     rtree.index.Index
@@ -142,13 +151,9 @@ def build_agqt_index(raster, max_depth, stats=None, band=1, nodata=None, affine=
     """
     stats_conf = Stats(stats, categorical=categorical)
 
-    agqt = AggQuadTree(
-        max_depth=max_depth,
-        index_path=index_path,
-        build_index=True
-    )
+    agqt = AggQuadTree(max_depth=max_depth, index_path=index_path, build_index=True)
     agqt.stats = stats_conf
-    
+
     with open_raster(raster, affine=affine, nodata=nodata, band=band) as ds:
         validate_is_north_up(ds.transform)
         if agqt._index_files_exist():
