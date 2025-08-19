@@ -16,6 +16,9 @@ extensions = [
     "sphinx.ext.todo",
 ]
 
+html_static_path = ['_static']
+html_extra_path = ['../assets']
+
 autosummary_generate = True
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False

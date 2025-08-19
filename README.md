@@ -1,12 +1,13 @@
 # raptor-stats
 
-[Raptor (Raster-Vector) Zonal Statistics](https://simonpedrogonzalez.github.io/raptor-stats-docs/index.html)
-
-This package provides a simple interface to calculate zonal statistics using Raptor Methods with a `rasterstats`-like api.
+[![Docs: latest](https://img.shields.io/badge/Docs-latest-blue)](https://simonpedrogonzalez.github.io/raptor-stats-docs/index.html)
+[![PyPI](https://img.shields.io/pypi/v/raptor-stats)](https://pypi.org/project/raptor-stats/)
+[![Python  3.12.8+](https://img.shields.io/badge/python-3.12.8+-blue.svg)](https://github.com/simonpedrogonzalez/raptor-stats)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+ 
+#### Compute zonal statistics using efficient Raptor (Raster+Vector) methods.
 
 ## Installation
-
-You can install the package using pip:
 
 ```bash
 pip install raptor-stats
@@ -17,18 +18,21 @@ pip install raptor-stats
 ```python
 from raptorstats import zonal_stats
 
-# Example usage
 stats = zonal_stats("path/to/vector.shp", "path/to/raster.tif", method="scanline")
 ```
-Note: see the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor-stats-docs/raptorstats.api.html#raptorstats.api.zonal_stats) for more details on input types and additional parameters.
+See the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor-stats-docs/raptorstats.api.html#raptorstats.api.zonal_stats) for more details on input types and additional parameters.
 
 ## Methods
 
-- `scanline`: Uses a scanline algorithm for efficient zonal statistics. Suitable for large datasets in a single pass (large raster, many features).
-- `agqt`: Uses the aggregated quadtree method. Suitable for several and repeated queries over a large dataset (large raster, many features).
+- `scanline`: Scans the raster file once, line by line, and computes all the intersections with the vector layer in a single pass. Suitable for fast one-time run results.
+- `agqt`: Builds a QuadTree with precomputed statistics, then combines it with the scanline method to answer queries more efficiently. Suitable for systems that repeatedly query changing vector layers over the same raster.
+
+## Performance
+
+The performance advantage of the raptor methods increases with the size of the input rasnter and number of feature vectors. The following is a comparison for a ~1.9 billion pixel raster and a ~3000 features (about 52000 vertices) on a i7-8750H (2019) 16GB RAM Linux machine.
 
 ## Credits
 
-- Author: [Simon Pedro Gonzalez](https://simonpedrogonzalez.github.io/)
-- This package is based on the following <a href="_static/mdml_final_report.pdf" download>project</a>, where you can read more about the zonal stats problem, methods and performance comparison.
-- This package API and tests are heavily inspired in the [rasterstats](https://github.com/perrygeo/python-rasterstats) package by [Matthew Perry](https://github.com/perrygeo).
+- Author: [Simon Pedro Gonzalez](https://simonpedrogonzalez.github.io/).
+- This package is based on the following <a href="assets/mdml_final_report.pdf" download>project</a>, where you can read more about the zonal stats problem, methods and performance comparison.
+- This package API is inspired in the [rasterstats](https://github.com/perrygeo/python-rasterstats) package by [Matthew Perry](https://github.com/perrygeo).
