@@ -35,29 +35,35 @@ def zonal_stats(
 
     Parameters
     ----------
-    vectors :  str | Path | geopandas.GeoDataFrame |
-                shapely.geometry.base.BaseGeometry | Sequence[BaseGeometry] |
-                dict (GeoJSON-like mapping),
-                anything GeoPandas can read.
+    vectors :  str | Path | geopandas.GeoDataFrame | shapely.geometry.base.BaseGeometry | Sequence[BaseGeometry] | dict (GeoJSON-like mapping) | anything GeoPandas can read.
+        Vector source containing the geometries. Currently only closed polygons are supported (no single points or lines).
     raster  : str | Path | rasterio.io.DatasetReader | np.ndarray | anything rasterio can read
-    stats   : list[str]            statistics to compute (min, max, mean, etc.)
-    layer   : int | str            layer name/number for multi-layer vector sources
-    band    : int                  raster band (1-based)
-    nodata  : float | None         overrides raster NODATA value
-    affine  : affine.Affine | None required if `raster` is a NumPy array
+        Raster source containing the data to compute statistics on.
+    stats   : list[str]
+        Statistics to compute. Default: ["count", "min", "max", "mean"], also supported:
+        ["sum", "std", "median", "majority", "minority", "unique", "range", "nodata", "nan"].
+    layer   : int | str
+        Layer name/number for multi-layer vector sources
+    band    : int
+        Raster band (default 1)
+    nodata  : float | None
+        Overrides raster NODATA value
+    affine  : affine.Affine | None
+        Required if `raster` is a NumPy array
     prefix  : str | None
         Prefix every stat key (useful for merges)
     categorical : bool
         Whether to compute categorical stats (histogram)
     method  : str
         Zonal statistics method to use ('agqt' or 'scanline'). Default 'scanline'.
-        - 'scanline': builds one line per raster row, calculates the intersections with the vector layer,
-        identifying the pixels corresponding to each vector feature, and computes the statistics. It reads
-        the raster in a single pass, row by row, computing all the feature stats.
-        - 'agqt': builds an AggQuadTree index for the raster, which allows for fast querying of the statistics
-        for a grid of rectangular features. During the zonal_stats call, it identifies the rectangular features
-        inside the vector geometries and takes the pre-computed stats from the index file, while using the scanline
-        method for pixels inside the geometry that are not covered by the rectangular features.
+            - *scanline*: builds one line per raster row, calculates the intersections with the vector layer,
+              identifying the pixels corresponding to each vector feature, and computes the statistics. It reads
+              the raster in a single pass, row by row, computing all the feature stats.
+            
+            - *agqt*: builds an AggQuadTree index for the raster, which allows for fast querying of the statistics
+              for a grid of rectangular features. During the zonal_stats call, it identifies the rectangular features
+              inside the vector geometries and takes the pre-computed stats from the index file, while using the scanline
+              method for pixels inside the geometry that are not covered by the rectangular features.
     build_indices : bool
         Whether to force build (overwrite) the AggQuadTree index if it already exists. Default False.
     index_path : str
@@ -73,7 +79,8 @@ def zonal_stats(
         the `scanline` method.
     Returns
     -------
-    list[dict]                      one stats-dict per input feature
+    list[dict]
+        one stats-dict per input feature
 
     """
 
@@ -130,8 +137,9 @@ def build_agqt_index(
         making the tree unnecessarily large) can lead to slower times for the `agqt` method compared to
         the `scanline` method.
     stats : list[str]
-        Statistics to compute (min, max, mean, etc.). Important: the computed stats for the indices
-        must match the later required stats for the computation, when running zonal_stats.
+        Statistics to compute. Default: ["count", "min", "max", "mean"], also supported:
+        ["sum", "std", "median", "majority", "minority", "unique", "range", "nodata", "nan"]. Important: the
+        computed stats for the indices must match the later required stats for the computation, when running zonal_stats.
     band : int
         Raster band (1-based).
     nodata : float | None

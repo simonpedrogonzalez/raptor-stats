@@ -29,7 +29,18 @@ See the [zonal_stats API docs](https://simonpedrogonzalez.github.io/raptor-stats
 
 ## Performance
 
-The performance advantage of the raptor methods increases with the size of the input rasnter and number of feature vectors. The following is a comparison for a ~1.9 billion pixel raster and a ~3000 features (about 52000 vertices) on a i7-8750H (2019) 16GB RAM Linux machine.
+Raptor methods performance advantage increases with the size of the input raster and number of features. For example, with an ~1.9 billion pixel raster and 50 features (US states):
+
+![Raptor methods performance comparison](assets/total_time_s_states.png)
+
+For the same raster, on but around 3000 features (US counties):
+
+![Raptor methods performance comparison](assets/total_time_s_counties.png)
+
+
+NOTES:
+- These tests were made on a i7-8750H (2019) 16GB RAM Linux machine.
+- The performance of the agqt method depends on the depth of the tree selected and the size of the features.
 
 ## Credits
 
