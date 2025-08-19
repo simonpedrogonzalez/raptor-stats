@@ -16,8 +16,19 @@ extensions = [
     "sphinx.ext.todo",
 ]
 
+import os, shutil, pathlib
+
+def setup(app):
+    here = pathlib.Path(__file__).parent
+    src = (here / ".." / "assets").resolve()
+    dst = here / "assets"
+    if dst.exists():
+        shutil.rmtree(dst)
+    if src.exists():
+        shutil.copytree(src, dst)
+
 html_static_path = ['_static']
-html_extra_path = ['../assets']
+html_extra_path = ['assets']
 
 autosummary_generate = True
 napoleon_numpy_docstring = True
