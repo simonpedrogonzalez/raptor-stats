@@ -31,7 +31,7 @@ class AggQuadTree(ZonalStatMethod):
         dat_file = f"{self.index_path}.dat"
         return os.path.exists(idx_file) and os.path.exists(dat_file)
 
-    def _should_build_indices(self):
+    def _should_build_index(self):
         return self.build_index or not self._index_files_exist()
 
     def _get_params(self):
@@ -66,7 +66,7 @@ class AggQuadTree(ZonalStatMethod):
         self.n_features = len(features.geometry)
         self.effective_n_features = len(f_index_starts)
 
-    def _compute_quad_tree(self, feature: gpd.GeoDataFrame, raster: rio.DatasetReader):
+    def _compute_quad_tree(self, raster: rio.DatasetReader):
 
         def part1by1(n):
             n &= 0x0000FFFF
@@ -120,7 +120,7 @@ class AggQuadTree(ZonalStatMethod):
 
         def coarsen_from_children(boxes, ix, iy, divisions):
             """Given current level (divisions×divisions) tiles, build parent level
-            ((div/2)×(div/2)) by grouping children with parent indices (ix//2, iy//2)
+            ((div/2)x(div/2)) by grouping children with parent indices (ix//2, iy//2)
             and unioning bounds."""
             parent_div = divisions // 2
             pix = ix // 2
@@ -195,7 +195,7 @@ class AggQuadTree(ZonalStatMethod):
 
             if level == self.max_depth:
                 # Compute aggregates only once (on leaves)
-                vector_layer = gpd.GeoDataFrame(geometry=shp_boxes, crs=feature.crs)
+                vector_layer = gpd.GeoDataFrame(geometry=shp_boxes, crs=raster.crs)
                 sc = Scanline()
                 aggregates = np.array(sc(raster, vector_layer, self.stats))
             else:
@@ -245,15 +245,14 @@ class AggQuadTree(ZonalStatMethod):
         if os.path.exists(dat_file):
             os.remove(dat_file)
 
-    
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
-        if self._should_build_indices():
+        if self._should_build_index():
             if self._index_files_exist():
                 warnings.warn(
                     f"Index files {self.index_path}.idx and {self.index_path}.dat already exist. They will be overwritten.",
                 )
                 self._delete_index_files()
-            self._compute_quad_tree(features, raster)
+            self._compute_quad_tree(raster)
         else:
             self._load_quad_tree()
         self._compute_scanline_reading_table(features, raster)

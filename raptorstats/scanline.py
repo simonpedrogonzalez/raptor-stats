@@ -10,7 +10,6 @@ from shapely import LineString, MultiLineString
 from raptorstats.zonal_stat_method import ZonalStatMethod
 from raptorstats.stats import Stats
 
-
 def xy_to_rowcol(xs, ys, transform):
     cols, rows = (~transform) * (xs, ys)
 
@@ -160,7 +159,7 @@ def build_reading_table(f_index, intersection_coords, raster: rio.DatasetReader,
 
     return reading_table[sort_idx]
 
-def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats, partials=None):
+def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame, raster: rio.DatasetReader, stats: Stats, partials=None, max_collected_rows_percentage=10):
     """Read the pixels indicated by the reading table and compute statistics.
 
     Parameters
@@ -182,9 +181,28 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
         A list of statistics for each feature
 
     """
+
+    def compute_partials(pixel_values_per_feature: list, results_per_feature: list, stats: Stats):
+        """Compute partials and append to the results_per_feature list. Both lists are n_features long.
+        Assumes pixel_values_per_feature is a list of lists, and it's ordered by feature index."""
+
+        for i in range(len(pixel_values_per_feature)):
+            if not pixel_values_per_feature[i]:
+                feature_data = np.ma.array([], mask=True)
+            else:
+                feature_data = np.ma.concatenate(pixel_values_per_feature[i])
+            # get the stats
+            r = stats.from_array(feature_data)
+            results_per_feature[i].append(r)
+        return results_per_feature
+
     rows, row_starts = np.unique(reading_table[:, 0], return_index=True)
 
     pixel_values_per_feature = [[] for _ in range(len(features.geometry))]
+    results_per_feature = [[] for _ in range(len(features.geometry))]
+
+    max_rows = max_collected_rows_percentage / 100 * len(rows)
+    row_count = 0
 
     for i, row in enumerate(rows):
         start = row_starts[i]
@@ -211,21 +229,35 @@ def process_reading_table(reading_table: np.ndarray, features: gpd.GeoDataFrame,
 
             if len(pixel_values) > 0:
                 pixel_values_per_feature[f_index].append(pixel_values)
-
-    # combine the results
-    results_per_feature = []
-    for i in range(len(pixel_values_per_feature)):
-        if not pixel_values_per_feature[i]:
-            feature_data = np.ma.array([], mask=True)
+            
+        # This is a chunking mechanism to avoid memory issues
+        # for large datasets
+        if row_count >= max_rows:
+            results_per_feature = compute_partials(
+                pixel_values_per_feature, results_per_feature, stats
+            )
+            # reset the pixel values per feature
+            pixel_values_per_feature = [[] for _ in range(len(features.geometry))]
+            # reset the row count
+            row_count = 0
         else:
-            feature_data = np.ma.concatenate(pixel_values_per_feature[i])
-        # get the stats
-        r = stats.from_array(feature_data)
-        if partials is not None:
-            r = stats.from_partials([r, *partials[i]])
-        results_per_feature.append(r)
+            row_count += 1
 
-    return results_per_feature
+    # If there are still pixel values left, compute the partials
+    if pixel_values_per_feature:
+        results_per_feature = compute_partials(
+            pixel_values_per_feature, results_per_feature, stats
+        )
+    
+    final_results = []
+    for i in range(len(results_per_feature)):
+        if partials is not None and partials[i]:
+            # If partials are provided, combine them with the results
+            results_per_feature[i].extend(partials[i])
+        r = stats.from_partials(results_per_feature[i])
+        final_results.append(r)
+
+    return final_results
 
 
 class Scanline(ZonalStatMethod):
@@ -237,7 +269,6 @@ class Scanline(ZonalStatMethod):
 
     def _precomputations(self, features: gpd.GeoDataFrame, raster: rio.DatasetReader):
         # NOTE: ASSUMES NORTH UP, NO SHEAR AFFINE. ASSUMES GEOMETRIES ARE POLYGONS OR MULTIPOLYGONS (NO POINTS, MULTIPOINTS, LINES)
-        
         f_index, intersection_coords = build_intersection_table(features, raster)
         if not intersection_coords.size:
             self.results = [
@@ -245,9 +276,7 @@ class Scanline(ZonalStatMethod):
                 for _ in features.geometry
             ]
             return
-
         reading_table = build_reading_table(f_index, intersection_coords, raster, return_coordinates=False, sort_by_feature=False)
-
         self.results = process_reading_table(reading_table, features, raster, self.stats)
         
         # Debugging code
